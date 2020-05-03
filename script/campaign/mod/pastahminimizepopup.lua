@@ -31,8 +31,8 @@ function pastahminimizepopup()
    -- Things to disable /\
    local diplo -- Diplomacy Drop Down UIC
    local minDiplo -- button for minimize diplomacy : UIC
+   local smallBar -- Frame for the minDiplo button
    local minDiploToggle = false
-   local priority = 0
    local lastClickTime = 0
    local player_faction = cm:get_faction(cm:get_local_faction(true))
    -- For easily disabling vanilla buttons
@@ -164,6 +164,18 @@ function pastahminimizepopup()
 	  end
    end
 
+   --local function hideFactionPanel(uic, toggle)
+   --	  if not is_uicomponent(uic) then
+   --		 return
+   --	  end
+   --	  for i = 0, uic:ChildCount() - 1 do
+   --		 local child = UIComponent(uic:Find(i))
+   --		 if child:Id() ~= "small_bar" then
+   --			child:SetVisible(toggle)
+   --		 end
+   --	  end
+   --end
+
    local function mydebug()
 	  Log("-----------------------------------------------------")
 	  --Log("Is root interactive? " .. tostring(root:IsInteractive()))
@@ -224,150 +236,163 @@ function pastahminimizepopup()
 	  function(context)
 		 return context.string == "diplomacy_dropdown"
 	  end,
-	  function(context)
-		 -- Listener for checking double clicks on settlements
-		 mypcall(function()
-			   core:add_listener(
-				  "MinDiploDoubleClickListener",
-				  "ComponentLClickUp",
-				  true,
-				  mypcall(function(context)
-						if (lastClickTime ~= 0 and clock() - lastClickTime <= 0.3) then
-						   local settlement = cm:get_campaign_ui_manager().settlement_selected:sub(12)
-						   -- Is a settlement is actually selected?
-						   if settlement ~= nil and settlement ~= "" then
-							  local selectedFaction = cm:get_region(settlement):owning_faction()
-							  local buttonName = "faction_row_entry_" .. selectedFaction:name()
-							  local factionButton = find_uicomponent(diplo, "faction_panel", "sortable_list_factions", "list_clip", "list_box", buttonName)
-							  if not is_boolean(factionButton) then
-								 Log("Interactive? " .. tostring(factionButton:IsInteractive()))
-								 LogUic(factionButton)
-								 factionButton:SetVisible(true)
-								 factionButton:SimulateLClick()
+	  mypcall(function(context)
+			diplo = find_uicomponent(root, "diplomacy_dropdown")
+
+			if not is_nil(minDiplo) and is_nil(root) then return end
+			
+			if is_nil(smallBar) then
+			   smallBar = UIComponent( find_uicomponent(root, "diplomacy_dropdown", "faction_panel", "small_bar"):CopyComponent("diploSmallBar") )
+			   root:Adopt(smallBar:Address())
+			   local x, y = smallBar:Position()
+			   -- For some reason the cloned smallBar shifts by 1 pixel, correct it
+			   smallBar:MoveTo(x+1,y)
+			   smallBar:SetVisible(false)
+			end
+
+			-- Listener for checking double clicks on settlements
+			mypcall(function()
+				  core:add_listener(
+					 "MinDiploDoubleClickListener",
+					 "ComponentLClickUp",
+					 true,
+					 mypcall(function(context)
+						   if (lastClickTime ~= 0 and clock() - lastClickTime <= 0.3) then
+							  local settlement = cm:get_campaign_ui_manager().settlement_selected:sub(12)
+							  -- Is a settlement is actually selected?
+							  if settlement ~= nil and settlement ~= "" then
+								 local selectedFaction = cm:get_region(settlement):owning_faction()
+								 local buttonName = "faction_row_entry_" .. selectedFaction:name()
+								 local factionButton = find_uicomponent(diplo, "faction_panel", "sortable_list_factions", "list_clip", "list_box", buttonName)
+								 if not is_boolean(factionButton) then
+									Log("Interactive? " .. tostring(factionButton:IsInteractive()))
+									LogUic(factionButton)
+									factionButton:SetVisible(true)
+									factionButton:SimulateLClick()
+								 end
 							  end
 						   end
-						end
-						lastClickTime = clock()
-				  end),
-				  true
-			   )
-		 end)()
+						   lastClickTime = clock()
+					 end),
+					 true
+				  )
+			end)()
 
-		 diplo = find_uicomponent(root, "diplomacy_dropdown")
+			minDiplo = Button.new("MinimizeDiplomacyButton", root, "SQUARE", "ui/skins/default/parchment_header_max.png")
 
-		 if minDiplo ~= nil then return end
+			cm:callback(
+			   mypcall(function(context)
+					 local uic = find_uicomponent(root, "diplomacy_dropdown")
+					 Log("Width: "..tostring(uic:Width())..", Height: "..tostring(uic:Height()))
+					 minDiplo:Resize(50, 50)
+					 --minDiplo:PositionRelativeTo(uic, -(minDiplo:Width()*.5), -minDiplo:Height() + 10)
+					 minDiplo:PositionRelativeTo( uic, uic:Width()/3 - minDiplo:Width()*1, root:Height() - minDiplo:Height() )
+					 minDiplo.uic:RegisterTopMost()
+					 LogUic(minDiplo.uic)
+					 LogUic(uic)
+			   end), 0, "setupMinDiplo"
+			)
+			minDiplo:RegisterForClick(
+			   mypcall(function(context)
+					 minDiploToggle = not minDiploToggle
+					 --mydebug()
 
-		 minDiplo = Button.new("MinimizeDiplomacyButton", find_uicomponent(root), "SQUARE", "ui/skins/default/parchment_header_max.png")
-		 -- Frame pic: ui\skins\default\bar_small_central_left.png
-		 -- Make frame lower priority than existing diplo frame, but button is higher priority than diplo panel
-		 cm:callback(
-			function(context)
-			   local uic = find_uicomponent(root, "diplomacy_dropdown", "faction_panel", "small_bar")
-			   Log(uic:GetImagePath())
-			   --minDiplo:Resize(25, 25)
-			   minDiplo:PositionRelativeTo(uic, - sizeButton:Width() - 5, -sizeButton:Height())
-			end, 0, "moveMinDiploBut"
-		 )
-		 minDiplo:RegisterForClick(
-			mypcall(function(context)
-				  minDiploToggle = not minDiploToggle
-				  --mydebug()
+					 if minDiploToggle then
+						-- HIDE
+						minDiplo:SetImage("ui/skins/default/parchment_header_min.png")
+						cm:get_campaign_ui_manager():lock_ui()
 
-				  if minDiploToggle then
-					 -- HIDE
-					 minDiplo:SetImage("ui/skins/default/parchment_header_min.png")
-					 cm:get_campaign_ui_manager():lock_ui()
+						--root:Divorce(diplo:Address())
+						-- Say that diplomacy_dropdown panel isn't open
+						--local panels = cm:get_campaign_ui_manager().panels_open
+						--for k in pairs(panels) do
+						--	 panels[k] = nil
+						--end
+						--local diplomacy_panel_context = cm:get_diplomacy_panel_context()
+						--if not is_nil(testcont) then
+						--	 core:trigger_event("PanelClosedCampaign", testcont)
+						--end
+						--core:trigger_event("PanelClosedCampaign", "dropdown_diplomacy", diplo)
+						--cm:get_campaign_ui_manager():add_campaign_panel_closed_interaction_monitor("diplomacy_panel_closed", "dropdown_diplomacy")
 
-					 --root:Divorce(diplo:Address())
-					 -- Say that diplomacy_dropdown panel isn't open
-					 --local panels = cm:get_campaign_ui_manager().panels_open
-					 --for k in pairs(panels) do
-					 --	 panels[k] = nil
-					 --end
-					 --local diplomacy_panel_context = cm:get_diplomacy_panel_context()
-					 --if not is_nil(testcont) then
-					 --	 core:trigger_event("PanelClosedCampaign", testcont)
-					 --end
-					 --core:trigger_event("PanelClosedCampaign", "dropdown_diplomacy", diplo)
-					 --cm:get_campaign_ui_manager():add_campaign_panel_closed_interaction_monitor("diplomacy_panel_closed", "dropdown_diplomacy")
+						--local diplomacy_panel_context = cm:get_diplomacy_panel_context()
+						--if diplomacy_panel_context ~= "" then
+						--	 --cm.diplomacy_panel_context_listener_started = false
+						--	 core:trigger_event("ScriptEventDiplomacyPanelContext", diplomacy_panel_context)
+						--end
 
-					 --local diplomacy_panel_context = cm:get_diplomacy_panel_context()
-					 --if diplomacy_panel_context ~= "" then
-					 --	 --cm.diplomacy_panel_context_listener_started = false
-					 --	 core:trigger_event("ScriptEventDiplomacyPanelContext", diplomacy_panel_context)
-					 --end
+						--root:Adopt(setlPanel:Address())
+						--setlPanel:SetVisible(true)
+						--layout:SetInteractive(false)
+						--setlPanel:SetDisabled(true)
 
-					 --root:Adopt(setlPanel:Address())
-					 --setlPanel:SetVisible(true)
-					 --layout:SetInteractive(false)
-					 --setlPanel:SetDisabled(true)
+						-- Actually closes diplomacy like normally
+						--local buttonCloseDiplomacy = find_uicomponent(root, "diplomacy_dropdown", "faction_panel", "both_buttongroup", "button_cancel");
+						--buttonCloseDiplomacy:SimulateLClick()
 
-					 -- Actually closes diplomacy like normally
-					 --local buttonCloseDiplomacy = find_uicomponent(root, "diplomacy_dropdown", "faction_panel", "both_buttongroup", "button_cancel");
-					 --buttonCloseDiplomacy:SimulateLClick()
+						--cm:get_campaign_ui_manager():reset_all_overrides()
 
-					 --cm:get_campaign_ui_manager():reset_all_overrides()
+						--priority = diplo:PropagatePriority(50)
+						--diplo:RemoveTopMost()
+						--core:trigger_event("PanelClosedCampaign", "diplomacy_dropdown")
 
-					 --priority = diplo:PropagatePriority(50)
-					 --diplo:RemoveTopMost()
-					 --core:trigger_event("PanelClosedCampaign", "diplomacy_dropdown")
+						--local cm = campaign_manager:get_campaign_ui_manager()
+						--cm:disable_shortcut("button_diplomacy", "show_diplomacy", true);
+						--cm:override_ui("disable_diplomacy", true);
+						--local ui_root = root;
+						--set_component_active_with_parent(false, ui_root, "button_diplomacy");
 
-					 --local cm = campaign_manager:get_campaign_ui_manager()
-					 --cm:disable_shortcut("button_diplomacy", "show_diplomacy", true);
-					 --cm:override_ui("disable_diplomacy", true);
-					 --local ui_root = root;
-					 --set_component_active_with_parent(false, ui_root, "button_diplomacy");
+						--set_component_active_with_parent(false, root, "diplomacy_dropdown")
 
-					 --set_component_active_with_parent(false, root, "diplomacy_dropdown")
+						--cm:poll_diplomacy_panel_context()
+						--root:Layout()-- Refresh display apparently
+					 else
+						-- SHOW
+						minDiplo:SetImage("ui/skins/default/parchment_header_max.png")
+						cm:get_campaign_ui_manager():unlock_ui()
 
-					 --cm:poll_diplomacy_panel_context()
-					 --root:Layout()-- Refresh display apparently
-				  else
-					 -- SHOW
-					 minDiplo:SetImage("ui/skins/default/parchment_header_max.png")
-					 cm:get_campaign_ui_manager():unlock_ui()
+						--root:Adopt(diplo:Address())
 
-					 --root:Adopt(diplo:Address())
+						--setlPanel:SetVisible(false)
+						--setlPanel:SetDisabled(false)
 
-					 --setlPanel:SetVisible(false)
-					 --setlPanel:SetDisabled(false)
+						-- Actually opens diplomacy like normally
+						--local buttonOpenDiplomacy = find_uicomponent(root, "faction_buttons_docker", "button_diplomacy");
+						--buttonOpenDiplomacy:SimulateLClick()
 
-					 -- Actually opens diplomacy like normally
-					 --local buttonOpenDiplomacy = find_uicomponent(root, "faction_buttons_docker", "button_diplomacy");
-					 --buttonOpenDiplomacy:SimulateLClick()
+						--core:Adopt(diplo:Address())
+						--diplo:RegisterTopMost()
+						--core:trigger_event("ScriptEventPlayerOpensDiplomacyPanel", "button_diplomacy")
 
-					 --core:Adopt(diplo:Address())
-					 --diplo:RegisterTopMost()
-					 --core:trigger_event("ScriptEventPlayerOpensDiplomacyPanel", "button_diplomacy")
+						--cm:disable_shortcut("button_diplomacy", "show_diplomacy", false);
+						--cm:override_ui("disable_diplomacy", false);
+						--local ui_root = root;
+						--set_component_active_with_parent(true, ui_root, "button_diplomacy");
+						--set_component_active_with_parent(true, ui_root, "button_diplomacy");
 
-					 --cm:disable_shortcut("button_diplomacy", "show_diplomacy", false);
-					 --cm:override_ui("disable_diplomacy", false);
-					 --local ui_root = root;
-					 --set_component_active_with_parent(true, ui_root, "button_diplomacy");
-					 --set_component_active_with_parent(true, ui_root, "button_diplomacy");
+						--core:start_custom_event_generator(
+						--	 "ComponentLClickUp", 
+						--	 function(context) return UIComponent(context.component) == minDiplo end, 
+						--	 "ScriptEventPlayerOpensDiplomacyPanel"
+						--)
 
-					 --core:start_custom_event_generator(
-					 --	 "ComponentLClickUp", 
-					 --	 function(context) return UIComponent(context.component) == minDiplo end, 
-					 --	 "ScriptEventPlayerOpensDiplomacyPanel"
-					 --)
+						--set_component_active_with_parent(true, root, "diplomacy_dropdown")
+					 end
 
-					 --set_component_active_with_parent(true, root, "diplomacy_dropdown")
-				  end
+					 diplo:SetVisible(not minDiploToggle)
+					 smallBar:SetVisible(minDiploToggle)
+					 layout:SetVisible(minDiploToggle)
 
-				  diplo:SetVisible(not minDiploToggle)
-				  layout:SetVisible(minDiploToggle)
-
-				  -- Disable buttons that break things or look janky
-				  Components.disableComponent(missionsButton, minDiploToggle)
-				  Components.disableComponent(generalButton, minDiploToggle)
-				  Components.disableComponent(factionsButton, minDiploToggle)
-				  Components.disableComponent(financeButton, minDiploToggle)
-				  Components.disableComponent(intrigueButton, minDiploToggle)
-				  disableRecurseUic(unitsList, "skill_button", minDiploToggle)
-			end)
-		 )
-	  end, true)
+					 -- Disable buttons that break things or look janky
+					 Components.disableComponent(missionsButton, minDiploToggle)
+					 Components.disableComponent(generalButton, minDiploToggle)
+					 Components.disableComponent(factionsButton, minDiploToggle)
+					 Components.disableComponent(financeButton, minDiploToggle)
+					 Components.disableComponent(intrigueButton, minDiploToggle)
+					 disableRecurseUic(unitsList, "skill_button", minDiploToggle)
+			   end)
+			)
+	  end), true)
 
    core:add_listener(
 	  "MinDiploDiplomacyClosedListener",
@@ -380,10 +405,12 @@ function pastahminimizepopup()
 		 diplo = nil
 		 -- Remove diplomacy double click listener so it doesn't interfere in other screens
 		 core:remove_listener("MinDiploDoubleClickListener")
-		 if minDiplo == nil then return end
-		 minDiplo:Delete()
+		 if is_nil(minDiplo) then return end
+		 minDiplo.uic:Adopt(smallBar:Address())
 		 minDiploToggle = false
+		 minDiplo:Delete()
 		 minDiplo = nil
+		 smallBar = nil
 	  end, true
    )
 
