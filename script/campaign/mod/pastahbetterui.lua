@@ -33,7 +33,7 @@
 local ModName = "Pastah's BetterUI"
 local logFile = "pastah.txt" -- Used for Log and LogUic
 local listeners = {} -- Event listeners
-local components = {} -- A collection of UIC
+local comps = {} -- A collection of UIC/components
 -- UIC handles
 local root
 local layout
@@ -70,6 +70,8 @@ local attitudeIcons = {
 local Components = require("uic/components")
 local clock = os.clock
 local tmp -- a variable for swapping functions around for hooking
+package.path = package.path .. ";script/campaign/mod/includes/?.lua"
+local inspect = require("inspect")
 
 
 
@@ -83,12 +85,7 @@ function sleep(n)  -- seconds
    while clock() - t0 <= n do end
 end
 
--- Clear log file
-if true then
-   local file = io.open(logFile, "w")
-   file:write()
-   file:close()
-end
+
 local function Log(text)
    if type(text) == "string" then
 	  local file = io.open(logFile, "a")
@@ -96,6 +93,8 @@ local function Log(text)
 	  file:close()
    end
 end
+
+
 -- Stolen from output_uicomponent()
 local function LogUic(uic, omit_children)
    if not is_uicomponent(uic) then
@@ -134,6 +133,7 @@ local function LogUic(uic, omit_children)
    Log("")
 end
 
+
 local function mypcall(func)
    local function errFunc(err)
 	  Log("Error in "..ModName..":")
@@ -147,6 +147,7 @@ local function mypcall(func)
 	  local ok,err = xpcall(f, errFunc)
    end
 end
+
 
 local function recurseFind(uic, search)
    if not is_uicomponent(uic) then
@@ -165,6 +166,7 @@ local function recurseFind(uic, search)
    return false
 end
 
+
 local function mapUic(uic, func, search)
    if not is_uicomponent(uic) then
 	  return
@@ -177,12 +179,22 @@ local function mapUic(uic, func, search)
    end
 end
 
+
 local function mydebug()
    Log("-----------------------------------------------------")
    LogUic(root)
    Log("minDiploToggle: "..tostring(minDiploToggle))
    Log("-----------------------------------------------------")
 end
+
+local function LogComps()
+   Log("Logging comps table")
+   for k,v in pairs(comps) do
+	  Log("k: "..tostring(k)..", v: ")
+	  LogUic(v)
+   end
+end
+
 
 -- Hook functions so we can create a list of listeners and components for cleanup later
 local function addListener(...)
@@ -192,28 +204,48 @@ end
 
 local function createComp(...)
    local slf = arg[1]
+   Log("Inside createComp(...)")
+   LogUic(slf)
    table.remove(arg,1)
-   local ret = slf:CreateComponent(unpack(arg))
-   local uic = UIComponent(ret)
-   table.insert(components, uic)
+   LogUic(slf)
+   local ret = UIComponent(slf:CreateComponent(unpack(arg)))
+   Log("Adding UIC: ")
+   LogUic(ret)
+   Log("Table before")
+   LogComps()
+   table.insert(comps, ret)
+   Log("Table after")
+   LogComps()
+   Log("Done checking createComp(...)")
    return ret
 end
 
 local function newButton(...)
    local ret = Button.new(unpack(arg))
-   table.insert(components, ret.uic)
+   table.insert(comps, ret.uic)
    return ret
 end
 
+
 local function copyComp(...)
-   table.insert(components, arg[1])
+   table.insert(comps, arg[1])
    local slf = arg[1]
+   Log("Inside copyComp(...)")
+   LogUic(slf)
    table.remove(arg,1)
-   local ret = slf:CopyComponent(unpack(arg))
-   local uic = UIComponent(ret)
-   table.insert(components, uic)
+   LogUic(slf)
+   local ret = UIComponent(slf:CopyComponent(unpack(arg)))
+   Log("Adding UIC: ")
+   LogUic(ret)
+   Log("Table before")
+   LogComps()
+   table.insert(comps, ret)
+   Log("Table after")
+   LogComps()
+   Log("Done checking copyComp(...)")
    return ret
 end
+
 
 local function getAttitudeIcon(faction, faction2)
    --faction2 = cm:model():world():faction_by_key(faction2)
@@ -242,7 +274,7 @@ end
 
 local function generateHoverAttitude(uic)
    local name = "PastahHoverAttitudeOther"..uic:Address()
-   local comp = UIComponent( createComp(root, name, "ui/campaign ui/region_info_pip") )
+   local comp = createComp(root, name, "ui/campaign ui/region_info_pip")
    local image = uic:GetImagePath()
    --ui\flags\wh_main_emp_empire_separatists/mon_24.png
    local faction2 = image:sub(10):match("(.*)\/")
@@ -253,6 +285,7 @@ local function generateHoverAttitude(uic)
    hoverAttitude.main:MoveTo(x,y)
    table.insert(hoverAttitude.others)
 end
+
 
 local function generateOtherHoverAttitudes()
    -- Left Panel root > diplomacy_dropdown > faction_left_status_panel > diplomatic_relations > list > icon_at_war > enemies > flag
@@ -265,9 +298,10 @@ local function generateOtherHoverAttitudes()
    -- Right Banner root > diplomacy_dropdown > faction_right_status_panel > button_faction
 end
 
+
 local function cleanupHoverAttitudes()
    if not is_nil(hoverAttitude.main) then
-	  components[hoverAttitude.main:Id()] = nil
+	  comps[hoverAttitude.main:Id()] = nil
 	  Util.delete(hoverAttitude.main)
 	  hoverAttitude.main = nil
 	  hoverAttitude.faction = nil
@@ -275,11 +309,12 @@ local function cleanupHoverAttitudes()
    for key,value in pairs(hoverAttitude.others) do
 	  if not is_nil(value) then
 		 Util.delete(value)
-		 components[key] = nil
+		 comps[key] = nil
 		 hoverAttitude.others[key] = nil
 	  end
    end
 end
+
 
 -- when cleanAll is false, things should still be able to operate without reloading a gamesave
 local function cleanup(cleanAll)
@@ -291,13 +326,13 @@ local function cleanup(cleanAll)
 	  end
    end
    cleanupHoverAttitudes()
-   for k,v in pairs(components) do
+   for k,v in pairs(comps) do
 	  if not is_nil(v) then
 		 if is_nil(v.Address) then
 			Log(tostring(k)..", "..tostring(v))
 		 end
 		 Util.delete(v)
-		 components[k] = nil
+		 comps[k] = nil
 	  end
    end
    -- Manual checkers because I'm an extra careful lamo 
@@ -315,9 +350,14 @@ end
 
 function pastahbetterui()
 
+   -- Clear log file
+   if true then
+	  local file = io.open(logFile, "w")
+	  file:write()
+	  file:close()
+   end
    Log("Initializing " .. ModName)
-   package.path = package.path .. ";script/campaign/mod/includes/?.lua"
-   local inspect = require("inspect")
+   LogComps()
 
    -- UIC handles
    root = find_uicomponent(core:get_ui_root())
@@ -339,6 +379,7 @@ function pastahbetterui()
    -- Listeners
    ------------
 
+   LogComps()
    addListener(
 	  "MinDiploDiplomacyOpenedListener",
 	  "PanelOpenedCampaign",
@@ -346,14 +387,39 @@ function pastahbetterui()
 		 return context.string == "diplomacy_dropdown"
 	  end,
 	  mypcall(function(context)
+			Log("panel opened")
+			LogComps()
 			diplo = find_uicomponent(root, "diplomacy_dropdown")
+			LogComps()
 
 			if not is_nil(minDiplo) and is_nil(root) then return end
+
+			-- Blank
+			Log("Logging comps table")
+			for k,v in pairs(comps) do
+			   Log("k: "..tostring(k)..", v: ")
+			   LogUic(v)
+			end
 			
+			Log("Test before:")
+			Log(tostring(smallBar))
+			Log(tostring(comps))
 			if is_nil(smallBar) then
-			   smallBar = UIComponent( copyComp(find_uicomponent(diplo, "faction_panel", "small_bar"), "diploSmallBar") )
+			   Log(tostring(smallBar))
+			   Log(tostring(comps))
+			   Log("Test after:")
+			   -- Not blank
+			   Log("Logging comps table")
+			   for k,v in pairs(comps) do
+				  Log("k: "..tostring(k)..", v: ")
+				  LogUic(v)
+			   end
+			   local test = find_uicomponent(diplo, "faction_panel", "small_bar")
+			   LogUic(test)
+			   smallBar = copyComp(test, "diploSmallBar")
 			   root:Adopt(smallBar:Address())
 			   local x, y = smallBar:Position()
+			   LogComps()
 
 			   smallBar:MoveTo(x+1,y)
 			   smallBar:SetVisible(false)
@@ -381,7 +447,7 @@ function pastahbetterui()
 						if faction then
 						   hoverAttitude.faction = faction
 						   local name = "PastahHoverAttitudeMain"
-						   hoverAttitude.main = UIComponent( createComp(root, name, "ui/campaign ui/region_info_pip") )
+						   hoverAttitude.main = createComp(root, name, "ui/campaign ui/region_info_pip")
 						   local faction2 = find_uicomponent(root, "diplomacy_dropdown", "faction_right_status_panel", "button_faction")
 						   faction2 = faction2:GetImagePath():sub(10):match("(.*)\/")
 						   faction2 = cm:get_faction(faction2)
@@ -425,9 +491,8 @@ function pastahbetterui()
 
 			cm:callback(
 			   mypcall(function(context)
-					 local uic = find_uicomponent(root, "diplomacy_dropdown")
 					 minDiplo:Resize(50, 50)
-					 minDiplo:PositionRelativeTo( uic, uic:Width()/3 - minDiplo:Width()*1, root:Height() - minDiplo:Height() )
+					 minDiplo:PositionRelativeTo( diplo, diplo:Width()/3 - minDiplo:Width()*1, root:Height() - minDiplo:Height() )
 					 minDiplo.uic:RegisterTopMost()
 			   end), 0, "setupMinDiplo"
 			)
@@ -459,6 +524,7 @@ function pastahbetterui()
 							end, "skill_button")
 			   end)
 			)
+			LogComps()
 	  end), true)
 
    addListener(
