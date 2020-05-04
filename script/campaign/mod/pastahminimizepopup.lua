@@ -13,6 +13,15 @@
 --  You should have received a copy of the GNU General Public License
 --  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 function pastahminimizepopup()
+   --[[
+	  TODO LIST
+	  * Tooltips for minimize button and faction attitude overlay
+	  * Button for toggling all attitudes in your faction panel
+	  * Add load button in battles
+	  * Make overlay colours better in campaign
+	  * Hovering over a flag will show attitudes in opposing panel (both sides / vice versa)
+	  * Perhaps hover over banner flag or attitude of target?
+   --]]
    ------------
    -- Variables
    ------------
@@ -34,15 +43,19 @@ function pastahminimizepopup()
    local smallBar -- Frame for the minDiplo button
    local minDiploToggle = false
    local lastClickTime = 0
-   local player_faction = cm:get_faction(cm:get_local_faction(true))
+   local hoverAttitude = {
+	  main = nil,
+	  others = {}
+   }
+   local attitudeIcons = {
+	  veryPositive = "ui/PastahBetterUI/icon_status_attitude_very_positive_24px.png",
+	  positive = "ui/PastahBetterUI/icon_status_attitude_positive_24px.png",
+	  neutral = "ui/PastahBetterUI/icon_status_attitude_neutral_24px.png",
+	  negative = "ui/PastahBetterUI/icon_status_attitude_negative_24px.png",
+	  veryNegative = "ui/PastahBetterUI/icon_status_attitude_very_negative_24px.png"
+   }
    -- For easily disabling vanilla buttons
    local Components = require("uic/components")
-   -- Crappy hack to get the handle to the settlement_panel
-   --local capital = player_faction:home_region():settlement()
-   --capital:SimulateLClick()
-   -- Infeasible because panel gets ?deleted?, i.e unable to obtain a permanent handle
-   --local setlPanel = find_uicomponent(root, "settlement_panel")
-   --CampaignUI.ClearSelection()
    local clock = os.clock
 
 
@@ -105,7 +118,12 @@ function pastahminimizepopup()
 	  Log("")
    end
    Log("Initializing " .. ModName)
-   --output_uicomponent_on_click()
+   --package.path = package.path .. ";script/myawesomeperfectmod/includes/?.lua"
+   --local inspect = require("inspect")
+   --local inspect = require("inspect")
+   --local inspect = require "inspect"
+   --Log(inspect({foo=123}))
+   --for i,v in ipairs(package.loaders) do Log(tostring(i)..", "..tostring(v("inspect"))) end
 
    local function mypcall(func)
 	  local function errFunc(err)
@@ -114,7 +132,10 @@ function pastahminimizepopup()
 		 Log(debug.traceback())
 	  end
 	  return function(context)
-		 local ok,err = xpcall(func, errFunc, context)
+		 local function f()
+			func(context)
+		 end
+		 local ok,err = xpcall(f, errFunc)
 	  end
    end
 
@@ -135,20 +156,6 @@ function pastahminimizepopup()
 	  return false
    end
 
-
-   local function mapUic(uic, search, func, ...)
-	  if not is_uicomponent(uic) then
-		 return
-	  end
-	  local ret = uic:Find(search)
-	  if ret then
-		 ret:func(unpack(arg))
-	  end
-	  for i = 0, uic:ChildCount() - 1 do
-		 ret = mapUic(uic:Find(i), search, unpack(arg))
-	  end
-   end
-
    local function disableRecurseUic(uic, search, toggle)
 	  if not is_uicomponent(uic) then
 		 return
@@ -164,44 +171,60 @@ function pastahminimizepopup()
 	  end
    end
 
-   --local function hideFactionPanel(uic, toggle)
-   --	  if not is_uicomponent(uic) then
-   --		 return
-   --	  end
-   --	  for i = 0, uic:ChildCount() - 1 do
-   --		 local child = UIComponent(uic:Find(i))
-   --		 if child:Id() ~= "small_bar" then
-   --			child:SetVisible(toggle)
-   --		 end
-   --	  end
-   --end
+   local function mapUic(uic, func, search)
+	  if not is_uicomponent(uic) then
+		 return
+	  end
+	  if not search or (search and uic:Id() == search) then
+		 func(uic)
+	  end
+	  for i = 0, uic:ChildCount() - 1 do
+		 mapUic( UIComponent(uic:Find(i)), func, search )
+	  end
+   end
 
    local function mydebug()
 	  Log("-----------------------------------------------------")
-	  --Log("Is root interactive? " .. tostring(root:IsInteractive()))
 	  LogUic(root)
-	  --local pm = find_uicomponent(root, "panel_manager")
-	  --LogUic(pm)
 	  Log("minDiploToggle: "..tostring(minDiploToggle))
-	  --LogUic(garbage)
-	  --LogUic(menuBar)
-	  --LogUic(layout)
-	  --LogUic(diplo)
-	  --local parent = UIComponent(diplo:Parent())
-	  --LogUic(parent)
-	  --local panels = cm:get_campaign_ui_manager().panels_open
-	  --Log(tostring(panels))
-	  --for i = 1, #panels do
-	  --	 Log(tostring(panels[i]))
-	  --end
-	  --local panelOpen = cm:get_campaign_ui_manager():is_panel_open("diplomacy_dropdown")
-	  --Log("Is diplomacy panel open? " .. tostring(panelOpen))
-	  --if not is_nil(setlPanel) and not is_boolean(setlPanel) then
-	  --	 LogUic(setlPanel)
-	  --	 Log("Parent of setlPanel:")
-	  --	 LogUic(UIComponent(setlPanel:Parent()))
-	  --end
 	  Log("-----------------------------------------------------")
+   end
+
+   local function getAttitudeIcon(faction)
+	  local faction2 = find_uicomponent(root, "diplomacy_dropdown", "faction_right_status_panel", "button_faction")
+	  faction2 = faction2:GetImagePath():sub(10):match("(.*)\/")
+	  faction2 = cm:get_faction(faction2)
+	  --faction2 = cm:model():world():faction_by_key(faction2)
+	  local attitude = faction2:diplomatic_attitude_towards(faction:name())
+	  -- Very Positive (50, infinity)
+	  -- Positive (15, 50]
+	  -- Neutral [-15, 15]
+	  -- Negative [-50, -15)
+	  -- Very Negative (-infinity, -50)
+	  local ret
+	  if attitude < -50 then
+		 ret = attitudeIcons.veryNegative
+	  elseif attitude < -15 then
+		 ret = attitudeIcons.negative
+	  elseif attitude <= 15 then
+		 ret = attitudeIcons.neutral
+	  elseif attitude <= 50 then
+		 ret = attitudeIcons.positive
+	  elseif attitude > 50 then
+		 ret = attitudeIcons.veryPositive
+	  end
+	  return ret
+   end
+
+   local function generateOtherHoverAttitudes()
+	  -- Left Panel root > diplomacy_dropdown > faction_left_status_panel > diplomatic_relations > list > icon_at_war > enemies > flag
+	  -- Right Panel root > diplomacy_dropdown > faction_right_status_panel > diplomatic_relations > list > icon_at_war > enemies > flag
+	  -- Check if it's left or right that is being hovered
+	  if uicomponent_to_str(hoverAttitude.main):match() then
+	  end
+
+	  -- Left Banner root > diplomacy_dropdown > faction_left_status_panel > button_faction
+	  -- Right Banner root > diplomacy_dropdown > faction_right_status_panel > button_faction
    end
 
 
@@ -230,6 +253,81 @@ function pastahminimizepopup()
    --	  true
    --)
 
+
+   --core:add_listener(
+   --	  "BetterUiCharacterSelectedListener",
+   --	  "CharacterSelected",
+   --	  true,
+   --	  mypcall(
+   --		 function(context)
+   --			Log("Character selected")
+   --		 end
+   --	  ),
+   --	  true
+   --)
+
+   core:add_listener(
+	  "MinDiploMouseOn",
+	  "ComponentMouseOn",
+   	  true,
+   	  mypcall(function(context)
+			if not is_nil(hoverAttitude.main) then
+			   Util.delete(hoverAttitude.main)
+			   hoverAttitude.main = nil
+			end
+			if context.string ~= "flag" then return end
+			if not is_nil(context.component) then
+			   local uic = UIComponent(context.component)
+			   LogUic(uic)
+			   local image = uic:GetImagePath()
+			   --ui\flags\wh_main_emp_empire_separatists/mon_24.png
+			   local faction = image:sub(10):match("(.*)\/")
+			   faction = cm:get_faction(faction)
+			   if faction then
+				  --root > 3d_ui_parent > label_settlement:wh_main_ostermark_nagenhof > list_parent > list > faction_symbol_holder > standard_zoom > attitude
+				  -- Perhaps copy an existing attitude icon and make another faction own it?
+				  --local parent = find_uicomponent(root, "3d_ui_parent")
+				  --mapUic(parent,
+				  --		 function(var)
+				  --			Log(var:GetImagePath())
+				  --		 end, "attitude")
+				  --ui\skins\default\icon_status_attitude_negative_24px.png
+
+				  --local icon = Image.new("PastahAttitudeIcon", root, "ui/skins/default/icon_status_attitude_very_positive_24px.png")
+				  hoverAttitude.main = UIComponent(root:CreateComponent("PastahAttitudeIcon", "ui/campaign ui/region_info_pip"))
+				  local icon = getAttitudeIcon(faction)
+				  hoverAttitude.main:SetImagePath(icon)
+				  local x, y = uic:Position()
+				  hoverAttitude.main:MoveTo(x,y)
+				  --hoverAttitude:SetImagePath("ui/skins/default/icon_status_attitude_very_positive_24px.png")
+				  --hoverAttitude:TextShaderTechniqueSet("colourwheel_t0")
+				  --hoverAttitude:TextShaderVarsSet(255, 0, 255, 0)
+				  --local a, b, c, d = hoverAttitude:ShaderVarsGet()
+				  --Log(tostring(a)..", "..tostring(b)..", "..tostring(c)..", "..tostring(d))
+
+				  --hoverAttitude = UIComponent( hoverAttitude:CopyComponent(hoverAttitude:Id()) )
+				  --root:Adopt(hoverAttitude:Address())
+				  --hoverAttitude:MoveTo(408,202)
+
+				  --local buttonName = "faction_row_entry_" .. faction:name()
+				  --local factionButton = find_uicomponent(diplo, "faction_panel", "sortable_list_factions", "list_clip", "list_box", buttonName)
+				  --if not is_boolean(factionButton) then
+				  --	 factionButton:SetVisible(true)
+				  --	 factionButton:SimulateLClick()
+				  --end
+			   else
+				  error(ModName.." couldn't find faction on MouseOn for 'flag'.\nImage was: "..image)
+			   end
+
+			   --Log(inspect(getmetatable(uic)))
+			   --for key,value in pairs(uic) do
+			   --	  Log("found member " .. key);
+			   --end
+			end
+	  end),
+   	  true
+   )
+
    core:add_listener(
 	  "MinDiploDiplomacyOpenedListener",
 	  "PanelOpenedCampaign",
@@ -257,6 +355,20 @@ function pastahminimizepopup()
 					 "ComponentLClickUp",
 					 true,
 					 mypcall(function(context)
+						   --"diplomacy_dropdown", "faction_left_status_panel", "diplomatic_relations", "list", "icon_at_war", "enemies", "flag")
+						   --local test = find_uicomponent(root, "diplomacy_dropdown", "faction_left_status_panel", "diplomatic_relations")
+						   --root > 3d_ui_parent
+						   --local test = find_uicomponent(root, "3d_ui_parent")
+						   --recurseLogUic(test)
+						   --LogUic(root)
+						   --root > diplomacy_dropdown > faction_right_status_panel
+						   --local test = find_uicomponent(root, "diplomacy_dropdown", "faction_right_status_panel")
+						   --mapUic(test,
+						   --				 function(var)
+						   --					LogUic(var)
+						   --				 end
+						   --)
+
 						   if (lastClickTime ~= 0 and clock() - lastClickTime <= 0.3) then
 							  local settlement = cm:get_campaign_ui_manager().settlement_selected:sub(12)
 							  -- Is a settlement is actually selected?
@@ -265,8 +377,6 @@ function pastahminimizepopup()
 								 local buttonName = "faction_row_entry_" .. selectedFaction:name()
 								 local factionButton = find_uicomponent(diplo, "faction_panel", "sortable_list_factions", "list_clip", "list_box", buttonName)
 								 if not is_boolean(factionButton) then
-									Log("Interactive? " .. tostring(factionButton:IsInteractive()))
-									LogUic(factionButton)
 									factionButton:SetVisible(true)
 									factionButton:SimulateLClick()
 								 end
@@ -283,19 +393,15 @@ function pastahminimizepopup()
 			cm:callback(
 			   mypcall(function(context)
 					 local uic = find_uicomponent(root, "diplomacy_dropdown")
-					 Log("Width: "..tostring(uic:Width())..", Height: "..tostring(uic:Height()))
 					 minDiplo:Resize(50, 50)
 					 --minDiplo:PositionRelativeTo(uic, -(minDiplo:Width()*.5), -minDiplo:Height() + 10)
 					 minDiplo:PositionRelativeTo( uic, uic:Width()/3 - minDiplo:Width()*1, root:Height() - minDiplo:Height() )
 					 minDiplo.uic:RegisterTopMost()
-					 LogUic(minDiplo.uic)
-					 LogUic(uic)
 			   end), 0, "setupMinDiplo"
 			)
 			minDiplo:RegisterForClick(
 			   mypcall(function(context)
 					 minDiploToggle = not minDiploToggle
-					 --mydebug()
 
 					 if minDiploToggle then
 						-- HIDE
@@ -400,8 +506,7 @@ function pastahminimizepopup()
 	  function(context) 
 		 return context.string == "diplomacy_dropdown"
 	  end,
-	  function(context)
-		 --mydebug()
+	  mypcall(function(context)
 		 diplo = nil
 		 -- Remove diplomacy double click listener so it doesn't interfere in other screens
 		 core:remove_listener("MinDiploDoubleClickListener")
@@ -411,7 +516,7 @@ function pastahminimizepopup()
 		 minDiplo:Delete()
 		 minDiplo = nil
 		 smallBar = nil
-	  end, true
+	  end), true
    )
 
 end
