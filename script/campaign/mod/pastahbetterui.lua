@@ -188,11 +188,14 @@ local function mydebug()
 end
 
 local function LogComps()
+   Log("------------------------------")
    Log("Logging comps table")
    for k,v in pairs(comps) do
 	  Log("k: "..tostring(k)..", v: ")
 	  LogUic(v)
    end
+   Log("Logging comps End")
+   Log("------------------------------")
 end
 
 
@@ -204,19 +207,9 @@ end
 
 local function createComp(...)
    local slf = arg[1]
-   Log("Inside createComp(...)")
-   LogUic(slf)
    table.remove(arg,1)
-   LogUic(slf)
    local ret = UIComponent(slf:CreateComponent(unpack(arg)))
-   Log("Adding UIC: ")
-   LogUic(ret)
-   Log("Table before")
-   LogComps()
    table.insert(comps, ret)
-   Log("Table after")
-   LogComps()
-   Log("Done checking createComp(...)")
    return ret
 end
 
@@ -228,21 +221,10 @@ end
 
 
 local function copyComp(...)
-   table.insert(comps, arg[1])
    local slf = arg[1]
-   Log("Inside copyComp(...)")
-   LogUic(slf)
    table.remove(arg,1)
-   LogUic(slf)
    local ret = UIComponent(slf:CopyComponent(unpack(arg)))
-   Log("Adding UIC: ")
-   LogUic(ret)
-   Log("Table before")
-   LogComps()
    table.insert(comps, ret)
-   Log("Table after")
-   LogComps()
-   Log("Done checking copyComp(...)")
    return ret
 end
 
@@ -329,7 +311,9 @@ local function cleanup(cleanAll)
    for k,v in pairs(comps) do
 	  if not is_nil(v) then
 		 if is_nil(v.Address) then
-			Log(tostring(k)..", "..tostring(v))
+			Log("k: "..tostring(k)..", v: ")
+			LogUic(v)
+			err(ModName..": Broken cleanup(..)")
 		 end
 		 Util.delete(v)
 		 comps[k] = nil
@@ -357,7 +341,6 @@ function pastahbetterui()
 	  file:close()
    end
    Log("Initializing " .. ModName)
-   LogComps()
 
    -- UIC handles
    root = find_uicomponent(core:get_ui_root())
@@ -379,7 +362,6 @@ function pastahbetterui()
    -- Listeners
    ------------
 
-   LogComps()
    addListener(
 	  "MinDiploDiplomacyOpenedListener",
 	  "PanelOpenedCampaign",
@@ -387,39 +369,15 @@ function pastahbetterui()
 		 return context.string == "diplomacy_dropdown"
 	  end,
 	  mypcall(function(context)
-			Log("panel opened")
-			LogComps()
 			diplo = find_uicomponent(root, "diplomacy_dropdown")
-			LogComps()
 
 			if not is_nil(minDiplo) and is_nil(root) then return end
 
-			-- Blank
-			Log("Logging comps table")
-			for k,v in pairs(comps) do
-			   Log("k: "..tostring(k)..", v: ")
-			   LogUic(v)
-			end
-			
-			Log("Test before:")
-			Log(tostring(smallBar))
-			Log(tostring(comps))
 			if is_nil(smallBar) then
-			   Log(tostring(smallBar))
-			   Log(tostring(comps))
-			   Log("Test after:")
-			   -- Not blank
-			   Log("Logging comps table")
-			   for k,v in pairs(comps) do
-				  Log("k: "..tostring(k)..", v: ")
-				  LogUic(v)
-			   end
 			   local test = find_uicomponent(diplo, "faction_panel", "small_bar")
-			   LogUic(test)
 			   smallBar = copyComp(test, "diploSmallBar")
 			   root:Adopt(smallBar:Address())
 			   local x, y = smallBar:Position()
-			   LogComps()
 
 			   smallBar:MoveTo(x+1,y)
 			   smallBar:SetVisible(false)
@@ -524,7 +482,6 @@ function pastahbetterui()
 							end, "skill_button")
 			   end)
 			)
-			LogComps()
 	  end), true)
 
    addListener(
