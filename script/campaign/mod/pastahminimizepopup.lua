@@ -21,22 +21,27 @@ function pastahminimizepopup()
 	  * Make overlay colours better in campaign
 	  * Hovering over a flag will show attitudes in opposing panel (both sides / vice versa)
 	  * Perhaps hover over banner flag or attitude of target?
+	  * Add tooltip with actual relation #
    --]]
    ------------
    -- Variables
    ------------
    local ModName = "Pastah's BetterUI"
    local logFile = "pastah.txt"
+   local listeners = {}
+   local components = {}
    local root = find_uicomponent(core:get_ui_root())
    local layout = find_uicomponent(root, "layout")
-   local menuBar = find_uicomponent(root, "menu_bar")
    -- Things to disable when toggling diplomacy panel \/
-   local missionsButton = find_uicomponent(root, "layout", "bar_small_top", "TabGroup", "tab_missions")
-   local factionsButton = find_uicomponent(root, "layout", "bar_small_top", "faction_icons", "button_factions")
-   local financeButton = find_uicomponent(root, "layout", "resources_bar", "topbar_list_parent", "treasury_holder", "dy_treasury", "button_finance")
-   local intrigueButton = find_uicomponent(root, "layout", "faction_buttons_docker", "button_group_management", "button_intrigue")
-   local generalButton = find_uicomponent(root, "layout", "info_panel_holder", "primary_info_panel_holder", "info_button_list", "button_general")
-   local unitsList = find_uicomponent(root, "layout", "radar_things", "dropdown_parent", "units_dropdown", "panel", "panel_clip", "sortable_list_units")
+   local minDiploJankyButtons = {
+	  missionsButton = find_uicomponent(layout, "bar_small_top", "TabGroup", "tab_missions"),
+	  factionsButton = find_uicomponent(layout, "bar_small_top", "faction_icons", "button_factions"),
+	  financeButton = find_uicomponent(layout, "resources_bar", "topbar_list_parent", "treasury_holder", "dy_treasury", "button_finance"),
+	  intrigueButton = find_uicomponent(layout, "faction_buttons_docker", "button_group_management", "button_intrigue"),
+	  generalButton = find_uicomponent(layout, "info_panel_holder", "primary_info_panel_holder", "info_button_list", "button_general"),
+   }
+   -- This is outside because it needs recursion
+   local unitsList = find_uicomponent(layout, "radar_things", "dropdown_parent", "units_dropdown", "panel", "panel_clip", "sortable_list_units")
    -- Things to disable /\
    local diplo -- Diplomacy Drop Down UIC
    local minDiplo -- button for minimize diplomacy : UIC
@@ -44,6 +49,7 @@ function pastahminimizepopup()
    local minDiploToggle = false
    local lastClickTime = 0
    local hoverAttitude = {
+	  faction = nil,
 	  main = nil,
 	  others = {}
    }
@@ -118,12 +124,8 @@ function pastahminimizepopup()
 	  Log("")
    end
    Log("Initializing " .. ModName)
-   --package.path = package.path .. ";script/myawesomeperfectmod/includes/?.lua"
-   --local inspect = require("inspect")
-   --local inspect = require("inspect")
-   --local inspect = require "inspect"
-   --Log(inspect({foo=123}))
-   --for i,v in ipairs(package.loaders) do Log(tostring(i)..", "..tostring(v("inspect"))) end
+   package.path = package.path .. ";script/myawesomeperfectmod/includes/?.lua"
+   local inspect = require("inspect")
 
    local function mypcall(func)
 	  local function errFunc(err)
@@ -156,21 +158,6 @@ function pastahminimizepopup()
 	  return false
    end
 
-   local function disableRecurseUic(uic, search, toggle)
-	  if not is_uicomponent(uic) then
-		 return
-	  end
-	  local ret = uic:Find(search)
-	  if ret then
-		 ret = UIComponent(ret)
-		 Components.disableComponent(ret, toggle)
-		 return
-	  end
-	  for i = 0, uic:ChildCount() - 1 do
-		 ret = disableRecurseUic(uic:Find(i), search, toggle)
-	  end
-   end
-
    local function mapUic(uic, func, search)
 	  if not is_uicomponent(uic) then
 		 return
@@ -190,12 +177,31 @@ function pastahminimizepopup()
 	  Log("-----------------------------------------------------")
    end
 
-   local function getAttitudeIcon(faction)
-	  local faction2 = find_uicomponent(root, "diplomacy_dropdown", "faction_right_status_panel", "button_faction")
-	  faction2 = faction2:GetImagePath():sub(10):match("(.*)\/")
-	  faction2 = cm:get_faction(faction2)
+   -- Hook functions so we can create a list of listeners and components for cleanup later
+   local function core.add_listener(...)
+	  table.insert(listeners, arg[1])
+	  core.add_listener(unpack(arg))
+   end
+
+   local function CreateComponent(...)
+	  table.insert(components, arg[1])
+	  return CreateComponent(unpack(arg))
+   end
+
+   local function Button.new(...)
+	  table.insert(components, arg[1])
+	  return Button.new(unpack(arg))
+   end
+
+   local function CopyComponent(...)
+	  table.insert(components, arg[1])
+	  return CopyComponent(unpack(arg))
+   end
+
+   local function getAttitudeIcon(faction, faction2)
 	  --faction2 = cm:model():world():faction_by_key(faction2)
 	  local attitude = faction2:diplomatic_attitude_towards(faction:name())
+	  -- This is guessed
 	  -- Very Positive (50, infinity)
 	  -- Positive (15, 50]
 	  -- Neutral [-15, 15]
@@ -216,119 +222,71 @@ function pastahminimizepopup()
 	  return ret
    end
 
+
+   local function generateHoverAttitude(uic)
+	  local name = "PastahHoverAttitudeOther"..uic:Address()
+	  local comp = UIComponent(root:CreateComponent(name, "ui/campaign ui/region_info_pip"))
+	  local image = uic:GetImagePath()
+	  --ui\flags\wh_main_emp_empire_separatists/mon_24.png
+	  local faction2 = image:sub(10):match("(.*)\/")
+	  faction = cm:get_faction(faction)
+	  local icon = getAttitudeIcon(faction2)
+	  comp:SetImagePath(icon)
+	  local x, y = uic:Position()
+	  hoverAttitude.main:MoveTo(x,y)
+	  table.insert(hoverAttitude.others)
+   end
+
    local function generateOtherHoverAttitudes()
 	  -- Left Panel root > diplomacy_dropdown > faction_left_status_panel > diplomatic_relations > list > icon_at_war > enemies > flag
 	  -- Right Panel root > diplomacy_dropdown > faction_right_status_panel > diplomatic_relations > list > icon_at_war > enemies > flag
-	  -- Check if it's left or right that is being hovered
-	  if uicomponent_to_str(hoverAttitude.main):match() then
-	  end
+	  local leftPanel = find_uicomponent(root, "diplomacy_dropdown", "faction_left_status_panel")
+	  local rightPanel = find_uicomponent(root, "diplomacy_dropdown", "faction_right_status_panel")
+	  mapUic(leftPanel)
 
 	  -- Left Banner root > diplomacy_dropdown > faction_left_status_panel > button_faction
 	  -- Right Banner root > diplomacy_dropdown > faction_right_status_panel > button_faction
+   end
+
+   local function cleanupHoverAttitudes()
+	  if not is_nil(hoverAttitude.main) then
+		 components[hoverAttitude.main:Id()] = nil
+		 Util.delete(hoverAttitude.main)
+		 hoverAttitude.main = nil
+		 hoverAttitude.faction = nil
+	  end
+	  for key,value in pairs(hoverAttitude.others) do
+		 if not is_nil(value) then
+			components[value:Id()] = nil
+			Util.delete(value)
+			hoverAttitude.others[key] = nil
+		 end
+	  end
+   end
+
+   -- when cleanAll is false, things should still be able to operate without reloading a gamesave
+   local function cleanup(cleanAll)
+	  diplo = nil
+	  -- Remove diplomacy double click listener so it doesn't interfere in other screens
+	  for k,v in pairs(listeners) do
+		 if cleanAll or (not cleanAll and v ~= "MinDiploDiplomacyOpenedListener") then
+			core:remove_listener(v)
+		 end
+	  end
+	  cleanupHoverAttitudes()
+	  for k,v in pairs(components) do
+		 if not is_nil(v) then
+			Util.delete(v)
+			components[k] = nil
+		 end
+	  end
    end
 
 
    ------------
    -- Listeners
    ------------
-
-   
-
-   --core:add_listener(
-   --	  "MinDiploSettlementSelectionListener",
-   --	  "SettlementSelected",
-   --	  true,
-   --	  mypcall(
-   --		 function(context)
-   --			Log("Finding settlement_panel...")
-   --			setlPanel = recurseFind(root, "settlement_panel")
-   --			--local selected_settlement = settlement_prepend_str .. context:garrison_residence():region():name()
-   --			--selectedFaction = context:garrison_residence():faction()
-   --			--Log("Selected Faction: " .. selectedFaction)
-   --			--root > diplomacy_dropdown > faction_panel > sortable_list_factions > list_clip > list_box > faction_row_entry_wh_main_brt_bretonnia
-   --			--local factionList = find_uicomponent(root, "diplomacy_dropdown", "sortable_list_factions", "list_clip", "list_box")
-   --			--out(factionList)
-   --		 end
-   --	  ),
-   --	  true
-   --)
-
-
-   --core:add_listener(
-   --	  "BetterUiCharacterSelectedListener",
-   --	  "CharacterSelected",
-   --	  true,
-   --	  mypcall(
-   --		 function(context)
-   --			Log("Character selected")
-   --		 end
-   --	  ),
-   --	  true
-   --)
-
-   core:add_listener(
-	  "MinDiploMouseOn",
-	  "ComponentMouseOn",
-   	  true,
-   	  mypcall(function(context)
-			if not is_nil(hoverAttitude.main) then
-			   Util.delete(hoverAttitude.main)
-			   hoverAttitude.main = nil
-			end
-			if context.string ~= "flag" then return end
-			if not is_nil(context.component) then
-			   local uic = UIComponent(context.component)
-			   LogUic(uic)
-			   local image = uic:GetImagePath()
-			   --ui\flags\wh_main_emp_empire_separatists/mon_24.png
-			   local faction = image:sub(10):match("(.*)\/")
-			   faction = cm:get_faction(faction)
-			   if faction then
-				  --root > 3d_ui_parent > label_settlement:wh_main_ostermark_nagenhof > list_parent > list > faction_symbol_holder > standard_zoom > attitude
-				  -- Perhaps copy an existing attitude icon and make another faction own it?
-				  --local parent = find_uicomponent(root, "3d_ui_parent")
-				  --mapUic(parent,
-				  --		 function(var)
-				  --			Log(var:GetImagePath())
-				  --		 end, "attitude")
-				  --ui\skins\default\icon_status_attitude_negative_24px.png
-
-				  --local icon = Image.new("PastahAttitudeIcon", root, "ui/skins/default/icon_status_attitude_very_positive_24px.png")
-				  hoverAttitude.main = UIComponent(root:CreateComponent("PastahAttitudeIcon", "ui/campaign ui/region_info_pip"))
-				  local icon = getAttitudeIcon(faction)
-				  hoverAttitude.main:SetImagePath(icon)
-				  local x, y = uic:Position()
-				  hoverAttitude.main:MoveTo(x,y)
-				  --hoverAttitude:SetImagePath("ui/skins/default/icon_status_attitude_very_positive_24px.png")
-				  --hoverAttitude:TextShaderTechniqueSet("colourwheel_t0")
-				  --hoverAttitude:TextShaderVarsSet(255, 0, 255, 0)
-				  --local a, b, c, d = hoverAttitude:ShaderVarsGet()
-				  --Log(tostring(a)..", "..tostring(b)..", "..tostring(c)..", "..tostring(d))
-
-				  --hoverAttitude = UIComponent( hoverAttitude:CopyComponent(hoverAttitude:Id()) )
-				  --root:Adopt(hoverAttitude:Address())
-				  --hoverAttitude:MoveTo(408,202)
-
-				  --local buttonName = "faction_row_entry_" .. faction:name()
-				  --local factionButton = find_uicomponent(diplo, "faction_panel", "sortable_list_factions", "list_clip", "list_box", buttonName)
-				  --if not is_boolean(factionButton) then
-				  --	 factionButton:SetVisible(true)
-				  --	 factionButton:SimulateLClick()
-				  --end
-			   else
-				  error(ModName.." couldn't find faction on MouseOn for 'flag'.\nImage was: "..image)
-			   end
-
-			   --Log(inspect(getmetatable(uic)))
-			   --for key,value in pairs(uic) do
-			   --	  Log("found member " .. key);
-			   --end
-			end
-	  end),
-   	  true
-   )
-
-   core:add_listener(
+   addListener(
 	  "MinDiploDiplomacyOpenedListener",
 	  "PanelOpenedCampaign",
 	  function(context)
@@ -348,45 +306,67 @@ function pastahminimizepopup()
 			   smallBar:SetVisible(false)
 			end
 
-			-- Listener for checking double clicks on settlements
-			mypcall(function()
-				  core:add_listener(
-					 "MinDiploDoubleClickListener",
-					 "ComponentLClickUp",
-					 true,
-					 mypcall(function(context)
-						   --"diplomacy_dropdown", "faction_left_status_panel", "diplomatic_relations", "list", "icon_at_war", "enemies", "flag")
-						   --local test = find_uicomponent(root, "diplomacy_dropdown", "faction_left_status_panel", "diplomatic_relations")
-						   --root > 3d_ui_parent
-						   --local test = find_uicomponent(root, "3d_ui_parent")
-						   --recurseLogUic(test)
-						   --LogUic(root)
-						   --root > diplomacy_dropdown > faction_right_status_panel
-						   --local test = find_uicomponent(root, "diplomacy_dropdown", "faction_right_status_panel")
-						   --mapUic(test,
-						   --				 function(var)
-						   --					LogUic(var)
-						   --				 end
-						   --)
+			addListener(
+			   "MinDiploMouseOn",
+			   "ComponentMouseOn",
+			   true,
+			   mypcall(function(context)
+					 cleanupHoverAttitudes()
+					 if context.string ~= "flag" then return end
+					 if not is_nil(context.component) then
+						local uic = UIComponent(context.component)
 
-						   if (lastClickTime ~= 0 and clock() - lastClickTime <= 0.3) then
-							  local settlement = cm:get_campaign_ui_manager().settlement_selected:sub(12)
-							  -- Is a settlement is actually selected?
-							  if settlement ~= nil and settlement ~= "" then
-								 local selectedFaction = cm:get_region(settlement):owning_faction()
-								 local buttonName = "faction_row_entry_" .. selectedFaction:name()
-								 local factionButton = find_uicomponent(diplo, "faction_panel", "sortable_list_factions", "list_clip", "list_box", buttonName)
-								 if not is_boolean(factionButton) then
-									factionButton:SetVisible(true)
-									factionButton:SimulateLClick()
-								 end
-							  end
+						Log(inspect(getmetatable(uic)))
+						for key,value in pairs(uic) do
+						   Log("found member " .. key);
+						end
+
+						local image = uic:GetImagePath()
+						--ui\flags\wh_main_emp_empire_separatists/mon_24.png
+						local faction = image:sub(10):match("(.*)\/")
+						faction = cm:get_faction(faction)
+						if faction then
+						   hoverAttitude.faction = faction
+						   local name = "PastahHoverAttitudeMain"
+						   hoverAttitude.main = UIComponent(root:CreateComponent(name, "ui/campaign ui/region_info_pip"))
+						   local faction2 = find_uicomponent(root, "diplomacy_dropdown", "faction_right_status_panel", "button_faction")
+						   faction2 = faction2:GetImagePath():sub(10):match("(.*)\/")
+						   faction2 = cm:get_faction(faction2)
+						   local icon = getAttitudeIcon(faction, faction2)
+						   hoverAttitude.main:SetImagePath(icon)
+						   local x, y = uic:Position()
+						   hoverAttitude.main:MoveTo(x,y)
+						else
+						   error(ModName.." couldn't find faction on MouseOn for 'flag'.\nImage was: "..image)
+						end
+					 end
+			   end),
+			   true
+			)
+
+			-- Listener for checking double clicks on settlements
+			addListener(
+			   "MinDiploDoubleClickListener",
+			   "ComponentLClickUp",
+			   true,
+			   mypcall(function(context)
+					 if (lastClickTime ~= 0 and clock() - lastClickTime <= 0.3) then
+						local settlement = cm:get_campaign_ui_manager().settlement_selected:sub(12)
+						-- Is a settlement is actually selected?
+						if settlement ~= nil and settlement ~= "" then
+						   local selectedFaction = cm:get_region(settlement):owning_faction()
+						   local buttonName = "faction_row_entry_" .. selectedFaction:name()
+						   local factionButton = find_uicomponent(diplo, "faction_panel", "sortable_list_factions", "list_clip", "list_box", buttonName)
+						   if not is_boolean(factionButton) then
+							  factionButton:SetVisible(true)
+							  factionButton:SimulateLClick()
 						   end
-						   lastClickTime = clock()
-					 end),
-					 true
-				  )
-			end)()
+						end
+					 end
+					 lastClickTime = clock()
+			   end),
+			   true
+			)
 
 			minDiplo = Button.new("MinimizeDiplomacyButton", root, "SQUARE", "ui/skins/default/parchment_header_max.png")
 
@@ -394,7 +374,6 @@ function pastahminimizepopup()
 			   mypcall(function(context)
 					 local uic = find_uicomponent(root, "diplomacy_dropdown")
 					 minDiplo:Resize(50, 50)
-					 --minDiplo:PositionRelativeTo(uic, -(minDiplo:Width()*.5), -minDiplo:Height() + 10)
 					 minDiplo:PositionRelativeTo( uic, uic:Width()/3 - minDiplo:Width()*1, root:Height() - minDiplo:Height() )
 					 minDiplo.uic:RegisterTopMost()
 			   end), 0, "setupMinDiplo"
@@ -407,82 +386,10 @@ function pastahminimizepopup()
 						-- HIDE
 						minDiplo:SetImage("ui/skins/default/parchment_header_min.png")
 						cm:get_campaign_ui_manager():lock_ui()
-
-						--root:Divorce(diplo:Address())
-						-- Say that diplomacy_dropdown panel isn't open
-						--local panels = cm:get_campaign_ui_manager().panels_open
-						--for k in pairs(panels) do
-						--	 panels[k] = nil
-						--end
-						--local diplomacy_panel_context = cm:get_diplomacy_panel_context()
-						--if not is_nil(testcont) then
-						--	 core:trigger_event("PanelClosedCampaign", testcont)
-						--end
-						--core:trigger_event("PanelClosedCampaign", "dropdown_diplomacy", diplo)
-						--cm:get_campaign_ui_manager():add_campaign_panel_closed_interaction_monitor("diplomacy_panel_closed", "dropdown_diplomacy")
-
-						--local diplomacy_panel_context = cm:get_diplomacy_panel_context()
-						--if diplomacy_panel_context ~= "" then
-						--	 --cm.diplomacy_panel_context_listener_started = false
-						--	 core:trigger_event("ScriptEventDiplomacyPanelContext", diplomacy_panel_context)
-						--end
-
-						--root:Adopt(setlPanel:Address())
-						--setlPanel:SetVisible(true)
-						--layout:SetInteractive(false)
-						--setlPanel:SetDisabled(true)
-
-						-- Actually closes diplomacy like normally
-						--local buttonCloseDiplomacy = find_uicomponent(root, "diplomacy_dropdown", "faction_panel", "both_buttongroup", "button_cancel");
-						--buttonCloseDiplomacy:SimulateLClick()
-
-						--cm:get_campaign_ui_manager():reset_all_overrides()
-
-						--priority = diplo:PropagatePriority(50)
-						--diplo:RemoveTopMost()
-						--core:trigger_event("PanelClosedCampaign", "diplomacy_dropdown")
-
-						--local cm = campaign_manager:get_campaign_ui_manager()
-						--cm:disable_shortcut("button_diplomacy", "show_diplomacy", true);
-						--cm:override_ui("disable_diplomacy", true);
-						--local ui_root = root;
-						--set_component_active_with_parent(false, ui_root, "button_diplomacy");
-
-						--set_component_active_with_parent(false, root, "diplomacy_dropdown")
-
-						--cm:poll_diplomacy_panel_context()
-						--root:Layout()-- Refresh display apparently
 					 else
 						-- SHOW
 						minDiplo:SetImage("ui/skins/default/parchment_header_max.png")
 						cm:get_campaign_ui_manager():unlock_ui()
-
-						--root:Adopt(diplo:Address())
-
-						--setlPanel:SetVisible(false)
-						--setlPanel:SetDisabled(false)
-
-						-- Actually opens diplomacy like normally
-						--local buttonOpenDiplomacy = find_uicomponent(root, "faction_buttons_docker", "button_diplomacy");
-						--buttonOpenDiplomacy:SimulateLClick()
-
-						--core:Adopt(diplo:Address())
-						--diplo:RegisterTopMost()
-						--core:trigger_event("ScriptEventPlayerOpensDiplomacyPanel", "button_diplomacy")
-
-						--cm:disable_shortcut("button_diplomacy", "show_diplomacy", false);
-						--cm:override_ui("disable_diplomacy", false);
-						--local ui_root = root;
-						--set_component_active_with_parent(true, ui_root, "button_diplomacy");
-						--set_component_active_with_parent(true, ui_root, "button_diplomacy");
-
-						--core:start_custom_event_generator(
-						--	 "ComponentLClickUp", 
-						--	 function(context) return UIComponent(context.component) == minDiplo end, 
-						--	 "ScriptEventPlayerOpensDiplomacyPanel"
-						--)
-
-						--set_component_active_with_parent(true, root, "diplomacy_dropdown")
 					 end
 
 					 diplo:SetVisible(not minDiploToggle)
@@ -490,32 +397,25 @@ function pastahminimizepopup()
 					 layout:SetVisible(minDiploToggle)
 
 					 -- Disable buttons that break things or look janky
-					 Components.disableComponent(missionsButton, minDiploToggle)
-					 Components.disableComponent(generalButton, minDiploToggle)
-					 Components.disableComponent(factionsButton, minDiploToggle)
-					 Components.disableComponent(financeButton, minDiploToggle)
-					 Components.disableComponent(intrigueButton, minDiploToggle)
-					 disableRecurseUic(unitsList, "skill_button", minDiploToggle)
+					 for k, v in pairs(minDiploJankyButtons) do
+						Components.disableComponent(v, minDiploToggle)
+					 end
+					 mapUic(unitsList,
+							function(var)
+							   Components.disableComponent(var, minDiploToggle)
+							end, "skill_button")
 			   end)
 			)
 	  end), true)
 
-   core:add_listener(
+   addListener(
 	  "MinDiploDiplomacyClosedListener",
 	  "PanelClosedCampaign",
 	  function(context) 
 		 return context.string == "diplomacy_dropdown"
 	  end,
 	  mypcall(function(context)
-		 diplo = nil
-		 -- Remove diplomacy double click listener so it doesn't interfere in other screens
-		 core:remove_listener("MinDiploDoubleClickListener")
-		 if is_nil(minDiplo) then return end
-		 minDiplo.uic:Adopt(smallBar:Address())
-		 minDiploToggle = false
-		 minDiplo:Delete()
-		 minDiplo = nil
-		 smallBar = nil
+			cleanup()
 	  end), true
    )
 
