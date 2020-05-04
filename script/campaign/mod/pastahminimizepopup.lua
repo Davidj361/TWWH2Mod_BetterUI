@@ -63,6 +63,7 @@ function pastahminimizepopup()
    -- For easily disabling vanilla buttons
    local Components = require("uic/components")
    local clock = os.clock
+   local tmp -- a variable for swapping functions around for hooking
 
 
    ------------
@@ -124,7 +125,7 @@ function pastahminimizepopup()
 	  Log("")
    end
    Log("Initializing " .. ModName)
-   package.path = package.path .. ";script/myawesomeperfectmod/includes/?.lua"
+   package.path = package.path .. ";script/campaign/mod/includes/?.lua"
    local inspect = require("inspect")
 
    local function mypcall(func)
@@ -178,24 +179,28 @@ function pastahminimizepopup()
    end
 
    -- Hook functions so we can create a list of listeners and components for cleanup later
-   local function core.add_listener(...)
+   local function addListener(...)
 	  table.insert(listeners, arg[1])
-	  core.add_listener(unpack(arg))
+	  return core:add_listener(unpack(arg))
    end
 
-   local function CreateComponent(...)
+   local function createComp(...)
 	  table.insert(components, arg[1])
-	  return CreateComponent(unpack(arg))
+	  local slf = arg[1]
+	  arg[1] = nil
+	  return slf:createComp(unpack(arg))
    end
 
-   local function Button.new(...)
+   local function newButton(...)
 	  table.insert(components, arg[1])
 	  return Button.new(unpack(arg))
    end
 
-   local function CopyComponent(...)
+   local function copyComp(...)
 	  table.insert(components, arg[1])
-	  return CopyComponent(unpack(arg))
+	  local slf = arg[1]
+	  arg[1] = nil
+	  return slf:CopyComponent(unpack(arg))
    end
 
    local function getAttitudeIcon(faction, faction2)
@@ -225,7 +230,7 @@ function pastahminimizepopup()
 
    local function generateHoverAttitude(uic)
 	  local name = "PastahHoverAttitudeOther"..uic:Address()
-	  local comp = UIComponent(root:CreateComponent(name, "ui/campaign ui/region_info_pip"))
+	  local comp = UIComponent( createComp(root, name, "ui/campaign ui/region_info_pip") )
 	  local image = uic:GetImagePath()
 	  --ui\flags\wh_main_emp_empire_separatists/mon_24.png
 	  local faction2 = image:sub(10):match("(.*)\/")
@@ -298,7 +303,7 @@ function pastahminimizepopup()
 			if not is_nil(minDiplo) and is_nil(root) then return end
 			
 			if is_nil(smallBar) then
-			   smallBar = UIComponent( find_uicomponent(root, "diplomacy_dropdown", "faction_panel", "small_bar"):CopyComponent("diploSmallBar") )
+			   smallBar = UIComponent( copyComp(find_uicomponent(root, "diplomacy_dropdown", "faction_panel", "small_bar"), "diploSmallBar") )
 			   root:Adopt(smallBar:Address())
 			   local x, y = smallBar:Position()
 			   -- For some reason the cloned smallBar shifts by 1 pixel, correct it
@@ -316,10 +321,10 @@ function pastahminimizepopup()
 					 if not is_nil(context.component) then
 						local uic = UIComponent(context.component)
 
-						Log(inspect(getmetatable(uic)))
-						for key,value in pairs(uic) do
-						   Log("found member " .. key);
-						end
+						--Log(inspect(getmetatable(uic)))
+						--for key,value in pairs(uic) do
+						--   Log("found member " .. key);
+						--end
 
 						local image = uic:GetImagePath()
 						--ui\flags\wh_main_emp_empire_separatists/mon_24.png
@@ -328,7 +333,7 @@ function pastahminimizepopup()
 						if faction then
 						   hoverAttitude.faction = faction
 						   local name = "PastahHoverAttitudeMain"
-						   hoverAttitude.main = UIComponent(root:CreateComponent(name, "ui/campaign ui/region_info_pip"))
+						   hoverAttitude.main = UIComponent( createComp(root, name, "ui/campaign ui/region_info_pip") )
 						   local faction2 = find_uicomponent(root, "diplomacy_dropdown", "faction_right_status_panel", "button_faction")
 						   faction2 = faction2:GetImagePath():sub(10):match("(.*)\/")
 						   faction2 = cm:get_faction(faction2)
@@ -368,7 +373,7 @@ function pastahminimizepopup()
 			   true
 			)
 
-			minDiplo = Button.new("MinimizeDiplomacyButton", root, "SQUARE", "ui/skins/default/parchment_header_max.png")
+			minDiplo = newButton("MinimizeDiplomacyButton", root, "SQUARE", "ui/skins/default/parchment_header_max.png")
 
 			cm:callback(
 			   mypcall(function(context)
