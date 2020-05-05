@@ -15,15 +15,29 @@
 
 
 --[[
-   TODO LIST
-   * Tooltips for minimize button and faction attitude overlay
-   * Button for toggling all attitudes in your faction panel
-   * Add load button in battles
-   * Make overlay colours better in campaign
-   * Hovering over a flag will show attitudes in opposing panel (both sides / vice versa)
-   * Perhaps hover over banner flag or attitude of target?
-   * Add tooltip with actual relation #
+TODO LIST
+* Tooltips for minimize button and faction attitude overlay
+* Button for toggling all attitudes in your faction panel
+* Add load game button in battles
+* Make overlay colours better in campaign
+* Hovering over a flag will show attitudes in opposing panel (both sides / vice versa)
+* Perhaps hover over banner flag or attitude of target?
+* Add tooltip with actual relation #
+* Have 2 relations icons, showing towards & getting
+* Make player towards factions show as grey & neutral
+* Able to automatically skip dialogues during end turn diplomacy
+* Able to move camera during end turn
+* WASD in diplomacy
+   
+Suggestions
+
+* "The delay when you craft something as dawii and the crafting screen pops back up after (feels kinda janky to me)"
+"Idk what I expect from that but it feels somewhat odd not being able to skip the animation and having the crafting interface disappear and reappear" 
+   
+* Game Bug: Camera doesn't follow the AI faction after this faction initiates diplomacy with you
 --]]
+
+
 
 
 ------------
@@ -41,11 +55,14 @@ local minDiploJankyButtons = {
    factionsButton,
    financeButton,
    intrigueButton,
-   generalButton
+   generalButton,
+   eventsButton,
 }
 -- This is outside because it needs recursion
 local unitsList
 -- Things to disable /\
+local restartButton
+local attitudeContainer
 local diplo -- Diplomacy Drop Down UIC
 local minDiplo -- button for minimize diplomacy : UIC
 local smallBar -- Frame for the minDiplo button
@@ -58,13 +75,20 @@ local attitudeIcons = {
    negative = "ui/PastahBetterUI/icon_status_attitude_negative_24px.png",
    veryNegative = "ui/PastahBetterUI/icon_status_attitude_very_negative_24px.png"
 }
+local brokenFactionFlags = {
+   wh2_main_chs_puppets_of_chaos = "wh2_main_chs_chaos_incursion_hef", -- 1 entry
+   wh2_main_chs_servants_to_chaos = "wh2_main_chs_chaos_incursion_def", -- 1 entry
+   wh2_main_rogue_morrslieb = "wh2_main_rogue_morrsliebs_howlers", -- 1 entry
+   wh2_main_hef_lothern = "wh2_main_hef_eataine", -- 2 entries, will put a random one
+   --wh_dlc03_bst_beastmen_rebels = "", -- This one is literally shared with 7 other factions, ignore it
+}
 local listeners = {} -- Event listeners
 local comps = {} -- A collection of UIC/components
 -- Listeners to not cleanup if not cleanAll
 local dontClean = {
    -- lol jank
    MinDiploDiplomacyOpenedListener = true,
-   MinDiploDiplomacyClosedListener = true
+   MinDiploDiplomacyClosedListener = true,
 }
 -- Attitude hover data for diplomacy screen
 local hoverAttitude = {
@@ -75,7 +99,6 @@ local hoverAttitude = {
 -- For easily disabling vanilla buttons
 local Components = require("uic/components")
 local clock = os.clock
-local tmp -- a variable for swapping functions around for hooking
 package.path = package.path .. ";script/campaign/mod/includes/?.lua"
 local inspect = require("inspect")
 
@@ -263,10 +286,10 @@ local function getAttitudeIcon(faction, faction2)
 end
 
 
-function hoverAttitude:generateMain(faction, uic)
+function hoverAttitude:generateMain(uic, faction)
    self.faction = faction
-   local name = "PastahHoverAttitudeMain"
-   self.main = UIComponent( root:CreateComponent(name, "ui/campaign ui/region_info_pip") )
+   local name = "pastahhoverattitudemain"
+   self.main = UIComponent( attitudeContainer:CreateComponent(name, "ui/campaign ui/region_info_pip") )
    local faction2 = find_uicomponent(root, "diplomacy_dropdown", "faction_right_status_panel", "button_faction")
    faction2 = faction2:GetImagePath():sub(10):match("(.*)\/")
    faction2 = cm:get_faction(faction2)
@@ -277,12 +300,34 @@ function hoverAttitude:generateMain(faction, uic)
 end
 
 
-function hoverAttitude:generateOthers()
+function hoverAttitude:generateComp(uic, faction)
+   local name = "pastahhoverattitude_"..uic:Address() -- helps make it unique
+   local name2 = "pastahhoverattitude2_"..uic:Address() -- helps make it unique
+   local attitude = UIComponent( attitudeContainer:CreateComponent(name, "ui/campaign ui/region_info_pip") )
+
+   local attitude2 = UIComponent( attitudeContainer:CreateComponent(name2, "ui/campaign ui/region_info_pip") )
+   self.others[attitude:Id()] = attitude
+   self.others[attitude2:Id()] = attitude2
+
+   local faction2 = find_uicomponent(root, "diplomacy_dropdown", "faction_right_status_panel", "button_faction")
+   faction2 = faction2:GetImagePath():sub(10):match("(.*)\/")
+   faction2 = cm:get_faction(faction2)
+   local icon = GetAttitudeIcon(faction, faction2)
+   self.main:SetImagePath(icon)
+   local x, y = uic:Position()
+   self.main:MoveTo(x,y)
+end
+
+
+function hoverAttitude:generateOthers(faction)
    -- Left Panel root > diplomacy_dropdown > faction_left_status_panel > diplomatic_relations > list > icon_at_war > enemies > flag
    -- Right Panel root > diplomacy_dropdown > faction_right_status_panel > diplomatic_relations > list > icon_at_war > enemies > flag
    local leftPanel = find_uicomponent(root, "diplomacy_dropdown", "faction_left_status_panel")
    local rightPanel = find_uicomponent(root, "diplomacy_dropdown", "faction_right_status_panel")
-   mapUic(leftPanel)
+
+   --mapUic(leftPanel)
+   --function()
+   --end
 
    -- Left Banner root > diplomacy_dropdown > faction_left_status_panel > button_faction
    -- Right Banner root > diplomacy_dropdown > faction_right_status_panel > button_faction
@@ -328,6 +373,57 @@ local function cleanup(cleanAll)
 end
 
 
+-- For reloading the Mod for streamlined testing & development
+local function restart()
+   Log("Restarting "..ModName)
+   cleanup(true)
+   Util.delete(restartButton.uic)
+   restartButton = nil
+   --package.loaded.pastahbetterui = nil
+   --require "pastahbetterui"
+
+   local f, err = loadfile("data/script/campaign/mod/pastahbetterui.lua")
+   local subdir_f, subdir_err = loadfile("exec/exec.lua")
+
+   if f then
+	  setfenv(f, core:get_env());
+	  local success, ret = pcall(f)
+
+	  if not success then
+		 out("LOADFILE: " .. ret)
+	  end
+   elseif subdir_f then
+	  setfenv(subdir_f, core:get_env());
+	  local success, ret = pcall(subdir_f)
+
+	  if not success then
+		 out("LOADFILE: " .. ret)
+	  end
+   else
+	  if err then
+		 out("LOADFILE: " .. err)
+	  end
+
+	  if subdir_err then
+		 out("LOADFILE: " .. subdir_err)
+	  end
+   end
+
+   pastahbetterui()
+end
+
+
+local function getFactionFromFlag(uic)
+   local image = uic:GetImagePath()
+   --ui\flags\wh_main_emp_empire_separatists/mon_24.png
+   local factionName = image:sub(10):match("(.*)\/")
+   local faction = cm:get_faction(factionName)
+   -- Check up our override table due to faction names not matching with flag paths
+   if not faction and brokenFactionFlags[factionName] then
+	  faction = cm:get_faction(brokenFactionFlags[factionName])
+   end
+   return faction
+end
 
 
 --===============================================================================
@@ -335,6 +431,8 @@ end
 --===============================================================================
 
 function pastahbetterui()
+
+
 
    -- Clear log file
    if true then
@@ -354,6 +452,7 @@ function pastahbetterui()
 	  financeButton = find_uicomponent(layout, "resources_bar", "topbar_list_parent", "treasury_holder", "dy_treasury", "button_finance"),
 	  intrigueButton = find_uicomponent(layout, "faction_buttons_docker", "button_group_management", "button_intrigue"),
 	  generalButton = find_uicomponent(layout, "info_panel_holder", "primary_info_panel_holder", "info_button_list", "button_general"),
+	  eventsButton = find_uicomponent(layout, "bar_small_top", "TabGroup", "tab_events"),
    }
    -- This is outside because it needs recursion
    unitsList = find_uicomponent(layout, "radar_things", "dropdown_parent", "units_dropdown", "panel", "panel_clip", "sortable_list_units")
@@ -364,6 +463,21 @@ function pastahbetterui()
    -- Listeners
    ------------
 
+   --addListener(
+   --	  "PastahTestListener",
+   --	  "ComponentLClickUp",
+   --	  true,
+   --	  mypcall(function(context)
+   --			Log("--------------------------------------------")
+   --			Log("CLICK")
+   --			local uic = UIComponent(context.component)
+   --			LogUic(uic)
+   --			Log("Callback:")
+   --			Log(uic:CallbackId())
+   --			Log("--------------------------------------------")
+   --	  end),
+   --	  true)
+
    addListener(
 	  "MinDiploDiplomacyOpenedListener",
 	  "PanelOpenedCampaign",
@@ -372,6 +486,7 @@ function pastahbetterui()
 	  end,
 	  mypcall(function(context)
 			diplo = find_uicomponent(root, "diplomacy_dropdown")
+			attitudeContainer = createComp(root, "PastahAttitudeIcons", "UI/campaign ui/script_dummy");
 
 			if not is_nil(minDiplo) and is_nil(root) then return end
 
@@ -396,12 +511,16 @@ function pastahbetterui()
 						local uic = UIComponent(context.component)
 						local image = uic:GetImagePath()
 						--ui\flags\wh_main_emp_empire_separatists/mon_24.png
-						local faction = image:sub(10):match("(.*)\/")
-						faction = cm:get_faction(faction)
+						local factionName = image:sub(10):match("(.*)\/")
+						local faction = cm:get_faction(factionName)
+						-- Check up our override table due to faction names not matching with flag paths
+						if not faction and brokenFactionFlags[factionName] then
+						   faction = cm:get_faction(brokenFactionFlags[factionName])
+						end
 						if faction then
-						   hoverAttitude:generateMain(faction, uic)
+						   hoverAttitude:generateMain(uic, faction)
 						else
-						   error(ModName.." couldn't find faction on MouseOn for 'flag'.\nImage was: "..image)
+						   error(ModName..": couldn't find faction on MouseOn for 'flag'.\nImage was: "..image.."\nFaction: "..factionName)
 						end
 					 end
 			   end),
@@ -429,8 +548,7 @@ function pastahbetterui()
 					 end
 					 lastClickTime = clock()
 			   end),
-			   true
-			)
+			   true)
 
 			minDiplo = newButton("MinimizeDiplomacyButton", root, "SQUARE", "ui/skins/default/parchment_header_max.png")
 
@@ -481,5 +599,9 @@ function pastahbetterui()
 			cleanup()
 	  end), true
    )
-
+   restartButton = Button.new("PastahRestartButton", root, "SQUARE", "ui/skins/default/parchment_header_max.png")
+   restartButton:RegisterForClick(
+	  mypcall(function(context)
+			restart()
+	  end))
 end
