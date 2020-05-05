@@ -263,21 +263,6 @@ local function getAttitudeIcon(faction, faction2)
 end
 
 
-local function generateHoverAttitude(uic)
-   local name = "PastahHoverAttitudeOther"..uic:Address()
-   local comp = UIComponent( root:CreateComponent(name, "ui/campaign ui/region_info_pip") )
-   local image = uic:GetImagePath()
-   --ui\flags\wh_main_emp_empire_separatists/mon_24.png
-   local faction2 = image:sub(10):match("(.*)\/")
-   faction = cm:get_faction(faction)
-   local icon = getAttitudeIcon(faction2)
-   comp:SetImagePath(icon)
-   local x, y = uic:Position()
-   hoverAttitude.main:MoveTo(x,y)
-   hoverAttitude.others[comp] = true
-end
-
-
 function hoverAttitude:generateMain(faction, uic)
    self.faction = faction
    local name = "PastahHoverAttitudeMain"
@@ -292,7 +277,7 @@ function hoverAttitude:generateMain(faction, uic)
 end
 
 
-local function generateOtherHoverAttitudes()
+function hoverAttitude:generateOthers()
    -- Left Panel root > diplomacy_dropdown > faction_left_status_panel > diplomatic_relations > list > icon_at_war > enemies > flag
    -- Right Panel root > diplomacy_dropdown > faction_right_status_panel > diplomatic_relations > list > icon_at_war > enemies > flag
    local leftPanel = find_uicomponent(root, "diplomacy_dropdown", "faction_left_status_panel")
