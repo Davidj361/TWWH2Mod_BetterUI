@@ -30,6 +30,8 @@ TODO LIST
 * WASD in diplomacy
    
 Suggestions
+* Settlement list similar to diplomacy screen, making it easier to jump around
+   * Has more info
 
 * "The delay when you craft something as dawii and the crafting screen pops back up after (feels kinda janky to me)"
 "Idk what I expect from that but it feels somewhat odd not being able to skip the animation and having the crafting interface disappear and reappear" 
@@ -96,11 +98,15 @@ local hoverAttitude = {
    main = nil,
    others = {}
 }
+local factionTableDB = {}
 -- For easily disabling vanilla buttons
 local Components = require("uic/components")
 local clock = os.clock
 package.path = package.path .. ";script/campaign/mod/includes/?.lua"
-local inspect = require("inspect")
+--local inspect = require("inspect")
+--local csv = require("csv")
+--local ftcsv = require('ftcsv')
+local tsv = require("tsv")
 
 
 
@@ -230,7 +236,7 @@ end
 
 -- Hook functions so we can create a list of listeners and components for cleanup later
 local function addListener(...)
-   table.insert(listeners, arg[1])
+   listeners[ arg[1] ] = true
    return core:add_listener(unpack(arg))
 end
 
@@ -262,7 +268,6 @@ end
 
 
 local function getAttitudeIcon(faction, faction2)
-   --faction2 = cm:model():world():faction_by_key(faction2)
    local attitude = faction2:diplomatic_attitude_towards(faction:name())
    -- This is guessed
    -- Very Positive (50, infinity)
@@ -350,23 +355,26 @@ end
 
 -- when cleanAll is false, things should still be able to operate without reloading a gamesave
 local function cleanup(cleanAll)
+   -- Cleanup the decorative bar for the minimize button
    if is_nil(minDiplo) and not is_nil(smallBar) then
 	  err(ModName..": minDiplo is nil and smallBar isn't.")
    elseif not is_nil(minDiplo) then
 	  minDiplo.uic:Adopt(smallBar:Address()) -- Needs to be first
    end
+   -- Cleanup listeners
    for k,v in pairs(listeners) do
-	  if cleanAll or (not cleanAll and not dontClean[v]) then
-		 core:remove_listener(v)
+	  if cleanAll or (not cleanAll and not dontClean[ k ]) then
+		 core:remove_listener(k)
 		 listeners[k] = nil
 	  end
    end
+   -- cleanup components
    hoverAttitude:cleanup()
    for k,v in pairs(comps) do
 	  Util.delete(v)
 	  comps[k] = nil
    end
-   -- Manual checkers because I'm an extra careful lamo 
+   -- Manual checkers reset
    diplo = nil
    minDiplo = nil
    smallBar = nil
@@ -379,24 +387,19 @@ local function restart()
    cleanup(true)
    Util.delete(restartButton.uic)
    restartButton = nil
+   package.loaded.tsv = nil
    --package.loaded.pastahbetterui = nil
    --require "pastahbetterui"
 
    local f, err = loadfile("data/script/campaign/mod/pastahbetterui.lua")
-   local subdir_f, subdir_err = loadfile("exec/exec.lua")
 
    if f then
 	  setfenv(f, core:get_env());
 	  local success, ret = pcall(f)
 
-	  if not success then
-		 out("LOADFILE: " .. ret)
-	  end
-   elseif subdir_f then
-	  setfenv(subdir_f, core:get_env());
-	  local success, ret = pcall(subdir_f)
-
-	  if not success then
+	  if success then
+		 pastahbetterui()
+	  else
 		 out("LOADFILE: " .. ret)
 	  end
    else
@@ -408,8 +411,17 @@ local function restart()
 		 out("LOADFILE: " .. subdir_err)
 	  end
    end
+end
 
-   pastahbetterui()
+
+local function readFactionTable()
+   Log("Start")
+   local textFile = "data/script/campaign/mod/includes/factions_tables.tsv"
+   local data = tsv:readFile(textFile)
+   Log( tostring(data:size()) )
+   Log( tostring(data:getRaw(3)) )
+   Log( tostring(data:get(5,"key")) )
+   Log("End")
 end
 
 
@@ -431,8 +443,6 @@ end
 --===============================================================================
 
 function pastahbetterui()
-
-
 
    -- Clear log file
    if true then
@@ -458,25 +468,17 @@ function pastahbetterui()
    unitsList = find_uicomponent(layout, "radar_things", "dropdown_parent", "units_dropdown", "panel", "panel_clip", "sortable_list_units")
    -- Things to disable /\
 
+   -- Restart button for debugging
+   restartButton = Button.new("PastahRestartButton", root, "SQUARE", "ui/skins/default/parchment_header_max.png")
+   restartButton:RegisterForClick(
+	  mypcall(function(context)
+			restart()
+	  end))
+
 
    ------------
    -- Listeners
    ------------
-
-   --addListener(
-   --	  "PastahTestListener",
-   --	  "ComponentLClickUp",
-   --	  true,
-   --	  mypcall(function(context)
-   --			Log("--------------------------------------------")
-   --			Log("CLICK")
-   --			local uic = UIComponent(context.component)
-   --			LogUic(uic)
-   --			Log("Callback:")
-   --			Log(uic:CallbackId())
-   --			Log("--------------------------------------------")
-   --	  end),
-   --	  true)
 
    addListener(
 	  "MinDiploDiplomacyOpenedListener",
@@ -487,6 +489,8 @@ function pastahbetterui()
 	  mypcall(function(context)
 			diplo = find_uicomponent(root, "diplomacy_dropdown")
 			attitudeContainer = createComp(root, "PastahAttitudeIcons", "UI/campaign ui/script_dummy");
+
+			readFactionTable()
 
 			if not is_nil(minDiplo) and is_nil(root) then return end
 
@@ -508,20 +512,13 @@ function pastahbetterui()
 					 hoverAttitude:cleanup()
 					 if context.string ~= "flag" then return end
 					 if not is_nil(context.component) then
-						local uic = UIComponent(context.component)
-						local image = uic:GetImagePath()
-						--ui\flags\wh_main_emp_empire_separatists/mon_24.png
-						local factionName = image:sub(10):match("(.*)\/")
-						local faction = cm:get_faction(factionName)
-						-- Check up our override table due to faction names not matching with flag paths
-						if not faction and brokenFactionFlags[factionName] then
-						   faction = cm:get_faction(brokenFactionFlags[factionName])
-						end
-						if faction then
-						   hoverAttitude:generateMain(uic, faction)
-						else
-						   error(ModName..": couldn't find faction on MouseOn for 'flag'.\nImage was: "..image.."\nFaction: "..factionName)
-						end
+					 	local uic = UIComponent(context.component)
+						local faction = getFactionFromFlag(uic)
+					 	if faction then
+					 	   hoverAttitude:generateMain(uic, faction)
+					 	else
+					 	   error(ModName..": couldn't find faction on MouseOn for 'flag'.\nImage was: "..image.."\nFaction: "..factionName)
+					 	end
 					 end
 			   end),
 			   true
@@ -599,9 +596,4 @@ function pastahbetterui()
 			cleanup()
 	  end), true
    )
-   restartButton = Button.new("PastahRestartButton", root, "SQUARE", "ui/skins/default/parchment_header_max.png")
-   restartButton:RegisterForClick(
-	  mypcall(function(context)
-			restart()
-	  end))
 end
