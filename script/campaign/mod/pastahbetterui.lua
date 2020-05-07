@@ -23,6 +23,7 @@ TODO LIST
 * WASD in diplomacy
 * Make overlay colours better in campaign
 * Arrow indicating towards and receiving
+* Contract all groups in faction list
 
 
 * Attitude Stuff:
@@ -100,7 +101,6 @@ local hoverAttitude = {
    faction = nil,
    listener = nil, -- for passing MouseOn events to original button
    others = {},
-   rows = {},
 }
 -- For easily disabling vanilla buttons
 local Components = require("uic/components")
@@ -359,25 +359,34 @@ function hoverAttitude:generateComps(uic, faction, faction2)
 	  else
 		 comp = UIComponent( attitudeContainer:CreateComponent(name, "ui/templates/custom_image") )
 	  end
+	  local arrow = UIComponent( comp:CreateComponent("arrow", "ui/templates/custom_image") )
 	  -- Apparently you need to set state and set visible with custom_image
 	  comp:SetState("custom_state_1")
 	  comp:SetVisible(true)
 	  comp:Resize(20,20)
+	  arrow:SetState("custom_state_1")
+	  arrow:SetVisible(true)
+	  arrow:Resize(10,10)
 	  --local icon = getAttitudeIcon(faction, faction2)
 	  local icon = getAttitudeIcon(factions[i%2+1], factions[(i+1)%2+1])
 	  comp:SetImagePath(icon)
+	  if i == 1 then
+		 arrow:SetImagePath("UI/PastahBetterUI/arrow_left.png")
+	  else
+		 arrow:SetImagePath("UI/PastahBetterUI/arrow_right.png")
+	  end
 	  local yOffset = 2
 	  local xOffset = 2
 	  local x, y = uic:Position()
 	  if (uic:Id() == "attitude") then
 		 xOffset = 20
-		 comp:MoveTo(x + xOffset, y + Y[i]*10 + yOffset)
+		 comp:MoveTo(x + xOffset, y + Y[i]*8 + yOffset)
 	  else
 		 comp:MoveTo(x + xOffset, y + Y[i]*10 + yOffset)
 	  end
-	  if (uic:Id() == "attitude") then
-		 self.rows[name] = comp
-	  else
+	  x, y = comp:Position()
+	  arrow:MoveTo(x + 14, y + 5)
+	  if uic:Id() ~= "attitude" then
 		 self.others[name] = comp
 	  end
    end
@@ -414,15 +423,9 @@ function hoverAttitude:generateOthers(faction)
 end
 
 
-function hoverAttitude:cleanup(cleanAll)
-   -- Row entries in faction panel
-   if cleanAll then
-	  local t = self.rows
-	  for k,v in pairs(t) do
-		 Util.delete(v)
-		 t[k] = nil
-	  end
-   end
+-- cleanAll shouldn't refer to the restart button
+-- instead should refer to hovering mouse over or closing diplomacy panel
+function hoverAttitude:cleanup()
    -- Flag icons
    local t = self.others
    for k,v in pairs(t) do
@@ -442,7 +445,7 @@ local function cleanup(cleanAll)
 	  end
    end
    -- cleanup components
-   hoverAttitude:cleanup(cleanAll)
+   hoverAttitude:cleanup()
    for k,v in pairs(comps) do
 	  Util.delete(v)
 	  comps[k] = nil
@@ -583,7 +586,7 @@ function pastahbetterui()
 			   end, true)
 
 			addListener(
-			   "PastahBetterUiFlagMouseOn",
+			   Prefix.."SelectedFaction",
 			   selectedFactionEvent,
 			   true,
 			   mypcall(function(context)
@@ -594,7 +597,7 @@ function pastahbetterui()
 
 			-- Listeners for mousing on
 			addListener(
-			   "PastahBetterUiFlagMouseOn",
+			   Prefix.."FlagMouseOn",
 			   "ComponentMouseOn",
 			   true,
 			   mypcall(function(context)
@@ -607,6 +610,21 @@ function pastahbetterui()
 					 	   hoverAttitude:generateMain(uic, faction)
 					 	end
 					 end
+			   end),
+			   true)
+			addListener(
+			   Prefix.."FactionButtonMouseOn",
+			   "ComponentMouseOn",
+			   function(context)
+				  return context.string == "button_faction"
+			   end,
+			   mypcall(function(context)
+					 --local uic = UIComponent(context.component)
+					 --local faction = getFactionFromImage(uic)
+					 --if faction then
+					 --	selectedFaction = faction
+					 --	core:trigger_event(selectedFactionEvent)
+					 --end
 			   end),
 			   true)
 			--addListener(
@@ -651,7 +669,7 @@ function pastahbetterui()
 
 			-- Listeners for checking clicks on factions for changing selectedFaction
 			addListener(
-			   "PastahBetterUiFlagClick",
+			   Prefix.."FlagClick",
 			   "ComponentLClickUp",
 			   function(context)
 				  return context.string == "flag"
@@ -666,7 +684,7 @@ function pastahbetterui()
 			   end),
 			   true)
 			addListener(
-			   "PastahBetterUiRowClick",
+			   Prefix.."RowClick",
 			   "ComponentLClickUp",
 			   function(context)
 				  return context.string:match("^(faction_row_entry_).*")
@@ -678,7 +696,7 @@ function pastahbetterui()
 			   end),
 			   true)
 			addListener(
-			   "PastahBetterUiFactionButtonClick",
+			   Prefix.."FactionButtonClick",
 			   "ComponentLClickUp",
 			   function(context)
 				  return context.string == "button_faction"
@@ -690,6 +708,25 @@ function pastahbetterui()
 						selectedFaction = faction
 						core:trigger_event(selectedFactionEvent)
 					 end
+			   end),
+			   true)
+
+			-- Needs to be refreshed when user enters negotiation
+			addListener(
+			   Prefix.."NegotiateClose",
+			   "ComponentLClickUp",
+			   function(context)
+				  --root > diplomacy_dropdown > offers_panel > offers_list_panel > button_set1 > button_cancel
+				  local uic = UIComponent(context.component)
+				  local str = uicomponent_to_str(uic):match("offers_list_panel")
+				  return context.string == "button_cancel" and str
+			   end,
+			   mypcall(function(context)
+					 Log("Works!")
+					 cm:callback(
+						mypcall(function(context)
+							  hoverAttitude:generateRows()
+						end), 0)
 			   end),
 			   true)
 
@@ -706,7 +743,7 @@ function pastahbetterui()
 
 
 			addListener(
-			   "MinimizeDiplomacyClickListener",
+			   Prefix.."MinimizeDiplomacyClickListener",
 			   "ComponentLClickUp",
 			   function(context)
 				  return context.component == minDiplo:Address()
