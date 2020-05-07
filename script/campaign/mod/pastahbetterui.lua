@@ -548,32 +548,30 @@ function pastahbetterui()
 			   true)
 
 			--minDiplo = createComp("MinimizeDiplomacyButton", faction_panel, "SQUARE", "ui/skins/default/parchment_header_max.png")
-			minDiplo = createComp(faction_panel, "MinimizeDiplomacyButton", "ui/templates/square_medium_button")
+			minDiplo = createComp(root, "MinimizeDiplomacyButton", "ui/templates/square_medium_button")
 			minDiplo:SetImagePath("ui/skins/default/parchment_header_max.png")
-			minDiplo:RegisterTopMost()
 
-			--local function minDiploSetup1()
 			minDiplo:Resize(50, 50)
 			minDiplo:SetDockOffset(0,0)
 			minDiplo:SetDockingPoint(0)
 			local factionOffX, factionOffY = faction_panel:Position()
-			minDiplo:MoveTo( factionOffX,  factionOffY + faction_panel:Height() - minDiplo:Height() )
-			--end
+			minDiplo:MoveTo( factionOffX - minDiplo:Width()*1.8,  factionOffY/1.5 + faction_panel:Height() - minDiplo:Height()*1.7 )
+			minDiplo:RegisterTopMost()
 
-			-- After initial setup of minDiplo, use this to reposition it during runtime
-			local minDiploReset
-			cm:callback(mypcall(
-						   function()
-							  local pos_x, pos_y = minDiplo:Position()
-							  local function foo()
-								 Log(tostring(pos_x)..", "..tostring(pos_y))
-								 minDiplo:SetDockOffset(0,0)
-								 minDiplo:SetDockingPoint(0)
-								 minDiplo:MoveTo( pos_x, pos_y )
-							  end
-							  minDiploReset = foo
-						   end
-							   ), .5) -- lel broken diplomacy UI crap, have to do this
+			---- After initial setup of minDiplo, use this to reposition it during runtime
+			--local minDiploReset
+			--cm:callback(mypcall(
+			--			   function()
+			--				  local pos_x, pos_y = minDiplo:Position()
+			--				  local function foo()
+			--					 Log(tostring(pos_x)..", "..tostring(pos_y))
+			--					 minDiplo:SetDockOffset(0,0)
+			--					 minDiplo:SetDockingPoint(0)
+			--					 minDiplo:MoveTo( pos_x, pos_y )
+			--				  end
+			--				  minDiploReset = foo
+			--			   end
+			--				   ), .5) -- lel broken diplomacy UI crap, have to do this
 
 			addListener(
 			   "MinimizeDiplomacyClickListener",
@@ -582,22 +580,22 @@ function pastahbetterui()
 				  return context.component == minDiplo:Address()
 			   end,
 			   mypcall(function(context)
-					 if not minDiploReset then return end -- Wow, have to use a timed callback to wait for UI to stop being dumb
+					 --if not minDiploReset then return end -- Wow, have to use a timed callback to wait for UI to stop being dumb
 					 LogUic(minDiplo)
 					 minDiploToggle = not minDiploToggle
 					 Log("hi")
 
 					 if minDiploToggle then
 						-- HIDE
-						root:Adopt(minDiplo:Address())
+						--root:Adopt(minDiplo:Address())
 						minDiplo:SetImagePath("ui/skins/default/parchment_header_min.png")
-						minDiploReset()
+						--minDiploReset()
 						cm:get_campaign_ui_manager():lock_ui()
 					 else
 						-- SHOW
-						faction_panel:Adopt(minDiplo:Address())
+						--diplo:Adopt(minDiplo:Address())
 						minDiplo:SetImagePath("ui/skins/default/parchment_header_max.png")
-						minDiploReset()
+						--minDiploReset()
 						cm:get_campaign_ui_manager():unlock_ui()
 					 end
 
