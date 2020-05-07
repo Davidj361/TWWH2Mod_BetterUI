@@ -280,6 +280,8 @@ local function copyComp(...)
 end
 
 
+-- faction2 is giving attitude
+-- faction is receiving attitude
 local function getAttitudeIcon(faction, faction2)
    local attitude = faction2:diplomatic_attitude_towards(faction:name())
    -- This is guessed
@@ -350,7 +352,7 @@ end
 function hoverAttitude:generateComps(uic, faction, faction2)
    local names = { "pastahhoverattitude_"..tostring(uic:Address()), "pastahhoverattitude2_"..tostring(uic:Address()) } -- helps make it unique
    local factions = { faction, faction2 }
-   local Y = { 1, -1 }
+   local Y = { -1, 1 }
 
    for i,name in ipairs(names) do
 	  local comp
@@ -367,13 +369,19 @@ function hoverAttitude:generateComps(uic, faction, faction2)
 	  arrow:SetState("custom_state_1")
 	  arrow:SetVisible(true)
 	  arrow:Resize(10,10)
-	  --local icon = getAttitudeIcon(faction, faction2)
-	  local icon = getAttitudeIcon(factions[i%2+1], factions[(i+1)%2+1])
+
+	  local icon
+	  local playerFaction = cm:get_faction(cm:get_local_faction(true))
+	  if faction == faction2 or factions[(i+1)%2+1] == playerFaction then
+		 icon = "ui/skins/default/icon_status_attitude_neutral_24px.png"
+	  else
+		 icon = getAttitudeIcon(factions[i%2+1], factions[(i+1)%2+1])
+	  end
 	  comp:SetImagePath(icon)
 	  if i == 1 then
-		 arrow:SetImagePath("UI/PastahBetterUI/arrow_left.png")
-	  else
 		 arrow:SetImagePath("UI/PastahBetterUI/arrow_right.png")
+	  else
+		 arrow:SetImagePath("UI/PastahBetterUI/arrow_left.png")
 	  end
 	  local yOffset = 2
 	  local xOffset = 2
@@ -381,7 +389,12 @@ function hoverAttitude:generateComps(uic, faction, faction2)
 	  if (uic:Id() == "attitude") then
 		 xOffset = 20
 		 comp:MoveTo(x + xOffset, y + Y[i]*8 + yOffset)
+	  elseif (uic:Id() == "button_faction") then
+		 xOffset = 2*uic:Width()/3
+		 yOffset = uic:Height()/3
+		 comp:MoveTo(x + xOffset, y + Y[i]*8 + yOffset)
 	  else
+		 -- It's a flag
 		 comp:MoveTo(x + xOffset, y + Y[i]*10 + yOffset)
 	  end
 	  x, y = comp:Position()
@@ -395,7 +408,6 @@ end
 
 function hoverAttitude:generateRows()
    --root > diplomacy_dropdown > faction_panel > sortable_list_factions > list_clip > list_box > faction_row_entry_wh_dlc03_bst_beastmen_chaos
-   -- Look for list_box
    mapUic(faction_panel, mypcall(
 			 function(var)
 				local factionName = var:Id():match("^faction_row_entry_(.*)")
@@ -408,19 +420,28 @@ function hoverAttitude:generateRows()
 end
 
 
-function hoverAttitude:generateOthers(faction)
-   -- Left Panel root > diplomacy_dropdown > faction_left_status_panel > diplomatic_relations > list > icon_at_war > enemies > flag
-   -- Right Panel root > diplomacy_dropdown > faction_right_status_panel > diplomatic_relations > list > icon_at_war > enemies > flag
-   local leftPanel = find_uicomponent(root, "diplomacy_dropdown", "faction_left_status_panel")
-   local rightPanel = find_uicomponent(root, "diplomacy_dropdown", "faction_right_status_panel")
-
-   --mapUic(leftPanel)
-   --function()
-   --end
-
-   -- Left Banner root > diplomacy_dropdown > faction_left_status_panel > button_faction
-   -- Right Banner root > diplomacy_dropdown > faction_right_status_panel > button_faction
+function hoverAttitude:generateFactionButton(faction2)
+   local uic = find_uicomponent(diplo, "faction_right_status_panel", "button_faction")
+   local faction = getFactionFromImage(uic)
+   Log(faction:name()..", 2:"..faction2:name())
+   if not faction or not faction2 then return end -- If either faction is invalid
+   self:generateComps(uic, faction, faction2)
 end
+
+
+--function hoverAttitude:generateOthers(faction)
+--   -- Left Panel root > diplomacy_dropdown > faction_left_status_panel > diplomatic_relations > list > icon_at_war > enemies > flag
+--   -- Right Panel root > diplomacy_dropdown > faction_right_status_panel > diplomatic_relations > list > icon_at_war > enemies > flag
+--   local leftPanel = find_uicomponent(root, "diplomacy_dropdown", "faction_left_status_panel")
+--   local rightPanel = find_uicomponent(root, "diplomacy_dropdown", "faction_right_status_panel")
+--
+--   --mapUic(leftPanel)
+--   --function()
+--   --end
+--
+--   -- Left Banner root > diplomacy_dropdown > faction_left_status_panel > button_faction
+--   -- Right Banner root > diplomacy_dropdown > faction_right_status_panel > button_faction
+--end
 
 
 -- cleanAll shouldn't refer to the restart button
@@ -608,25 +629,26 @@ function pastahbetterui()
 						local faction = getFactionFromImage(uic)
 					 	if faction then
 					 	   hoverAttitude:generateMain(uic, faction)
+						   hoverAttitude:generateFactionButton(faction)
 					 	end
 					 end
 			   end),
 			   true)
-			addListener(
-			   Prefix.."FactionButtonMouseOn",
-			   "ComponentMouseOn",
-			   function(context)
-				  return context.string == "button_faction"
-			   end,
-			   mypcall(function(context)
-					 --local uic = UIComponent(context.component)
-					 --local faction = getFactionFromImage(uic)
-					 --if faction then
-					 --	selectedFaction = faction
-					 --	core:trigger_event(selectedFactionEvent)
-					 --end
-			   end),
-			   true)
+			--addListener(
+			--   Prefix.."FactionButtonMouseOn",
+			--   "ComponentMouseOn",
+			--   function(context)
+			--	  return context.string == "button_faction"
+			--   end,
+			--   mypcall(function(context)
+			--		 --local uic = UIComponent(context.component)
+			--		 --local faction = getFactionFromImage(uic)
+			--		 --if faction then
+			--		 --	selectedFaction = faction
+			--		 --	core:trigger_event(selectedFactionEvent)
+			--		 --end
+			--   end),
+			--   true)
 			--addListener(
 			--   "PastahBetterUiRowMouseOn",
 			--   "ComponentMouseOn",
