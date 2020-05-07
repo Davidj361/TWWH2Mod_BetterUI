@@ -51,6 +51,7 @@ local logFile = "pastah.txt" -- Used for Log and LogUic
 -- UIC handles
 local root
 local layout
+local faction_panel
 -- Things to disable when toggling diplomacy panel \/
 local minDiploJankyButtons = {
    missionsButton,
@@ -84,11 +85,12 @@ local dontClean = {
    -- lol jank
    MinDiploDiplomacyOpenedListener = true,
    MinDiploDiplomacyClosedListener = true,
+   PastahRestartButtonListener = true,
 }
 -- Attitude hover data for diplomacy screen
 local hoverAttitude = {
    faction = nil,
-   main = nil,
+   listener = nil, -- for passing MouseOn events to original button
    others = {}
 }
 -- For easily disabling vanilla buttons
@@ -195,12 +197,21 @@ local function recurseFind(uic, search)
 end
 
 
-local function mapUic(uic, func, search)
+-- A mapping template function
+-- search is the UIC ID
+-- invert is whether to match or not match, then apply func
+local function mapUic(uic, func, search, invert)
    if not is_uicomponent(uic) then
 	  return
    end
-   if not search or (search and uic:Id() == search) then
-	  func(uic)
+   if invert then
+	  if not search or (search and uic:Id() ~= search) then
+		 func(uic)
+	  end
+   else
+	  if not search or (search and uic:Id() == search) then
+		 func(uic)
+	  end
    end
    for i = 0, uic:ChildCount() - 1 do
 	  mapUic( UIComponent(uic:Find(i)), func, search )
@@ -284,131 +295,7 @@ local function getAttitudeIcon(faction, faction2)
 end
 
 
-function hoverAttitude:generateMain(uic, faction)
-   self.faction = faction
-   local name = "pastahhoverattitudemain"
-   self.main = UIComponent( attitudeContainer:CreateComponent(name, "ui/campaign ui/region_info_pip") )
-   local faction2 = find_uicomponent(root, "diplomacy_dropdown", "faction_right_status_panel", "button_faction")
-   faction2 = faction2:GetImagePath():sub(10):match("(.*)\/")
-   faction2 = cm:get_faction(faction2)
-   local icon = getAttitudeIcon(faction, faction2)
-   self.main:SetImagePath(icon)
-   local x, y = uic:Position()
-   self.main:MoveTo(x,y)
-end
-
-
-function hoverAttitude:generateComp(uic, faction)
-   local name = "pastahhoverattitude_"..uic:Address() -- helps make it unique
-   local name2 = "pastahhoverattitude2_"..uic:Address() -- helps make it unique
-   local attitude = UIComponent( attitudeContainer:CreateComponent(name, "ui/campaign ui/region_info_pip") )
-
-   local attitude2 = UIComponent( attitudeContainer:CreateComponent(name2, "ui/campaign ui/region_info_pip") )
-   self.others[attitude:Id()] = attitude
-   self.others[attitude2:Id()] = attitude2
-
-   local faction2 = find_uicomponent(root, "diplomacy_dropdown", "faction_right_status_panel", "button_faction")
-   faction2 = faction2:GetImagePath():sub(10):match("(.*)\/")
-   faction2 = cm:get_faction(faction2)
-   local icon = GetAttitudeIcon(faction, faction2)
-   self.main:SetImagePath(icon)
-   local x, y = uic:Position()
-   self.main:MoveTo(x,y)
-end
-
-
-function hoverAttitude:generateOthers(faction)
-   -- Left Panel root > diplomacy_dropdown > faction_left_status_panel > diplomatic_relations > list > icon_at_war > enemies > flag
-   -- Right Panel root > diplomacy_dropdown > faction_right_status_panel > diplomatic_relations > list > icon_at_war > enemies > flag
-   local leftPanel = find_uicomponent(root, "diplomacy_dropdown", "faction_left_status_panel")
-   local rightPanel = find_uicomponent(root, "diplomacy_dropdown", "faction_right_status_panel")
-
-   --mapUic(leftPanel)
-   --function()
-   --end
-
-   -- Left Banner root > diplomacy_dropdown > faction_left_status_panel > button_faction
-   -- Right Banner root > diplomacy_dropdown > faction_right_status_panel > button_faction
-end
-
-
-function hoverAttitude:cleanup()
-   if self.main then
-	  Util.delete(self.main)
-	  self.main = nil
-	  self.faction = nil
-   end
-   local t = self.others
-   for k,v in pairs(t) do
-	  Util.delete(v)
-	  t[k] = nil
-   end
-end
-
-
--- when cleanAll is false, things should still be able to operate without reloading a gamesave
-local function cleanup(cleanAll)
-   -- Cleanup the decorative bar for the minimize button
-   if is_nil(minDiplo) and not is_nil(smallBar) then
-	  err(ModName..": minDiplo is nil and smallBar isn't.")
-   elseif not is_nil(minDiplo) then
-	  minDiplo.uic:Adopt(smallBar:Address()) -- Needs to be first
-   end
-   -- Cleanup listeners
-   for k,v in pairs(listeners) do
-	  if cleanAll or (not cleanAll and not dontClean[ k ]) then
-		 core:remove_listener(k)
-		 listeners[k] = nil
-	  end
-   end
-   -- cleanup components
-   hoverAttitude:cleanup()
-   for k,v in pairs(comps) do
-	  Util.delete(v)
-	  comps[k] = nil
-   end
-   -- Manual checkers reset
-   diplo = nil
-   minDiplo = nil
-   smallBar = nil
-end
-
-
--- For reloading the Mod for streamlined testing & development
-local function restart()
-   Log("Restarting "..ModName)
-   cleanup(true)
-   Util.delete(restartButton.uic)
-   restartButton = nil
-   package.loaded.factionsTableDB = nil
-   package.loaded.inspect = nil
-   --package.loaded.pastahbetterui = nil
-   --require "pastahbetterui"
-
-   local f, err = loadfile("data/script/campaign/mod/pastahbetterui.lua")
-
-   if f then
-	  setfenv(f, core:get_env());
-	  local success, ret = pcall(f)
-
-	  if success then
-		 pastahbetterui()
-	  else
-		 out("LOADFILE: " .. ret)
-	  end
-   else
-	  if err then
-		 out("LOADFILE: " .. err)
-	  end
-
-	  if subdir_err then
-		 out("LOADFILE: " .. subdir_err)
-	  end
-   end
-end
-
-
-local function getFactionFromFlag(uic)
+local function getFactionFromImage(uic)
    local image = uic:GetImagePath()
    --ui\flags\wh_main_emp_empire_separatists/mon_24.png
    local factionName = image:sub(10):match("(.*)/")
@@ -436,6 +323,121 @@ local function getFactionFromFlag(uic)
 	  error(ModName..": couldn't find faction on MouseOn for 'flag'.\nImage was: "..image.."\nFaction: "..factionName)
    end
    return faction
+end
+
+
+function hoverAttitude:generateMain(uic, faction)
+   local faction2 = find_uicomponent(root, "diplomacy_dropdown", "faction_right_status_panel", "button_faction")
+   faction2 = getFactionFromImage(faction2)
+   if not faction or not faction2 then return end -- If either faction is invalid
+   self:generateComps(uic, faction, faction2)
+end
+
+
+-- Creates 2 attitude icons
+-- Top is how faction feels towards faction2
+-- Bottom is how faction2 feels towards faction
+function hoverAttitude:generateComps(uic, faction, faction2)
+   local names = { "pastahhoverattitude_"..tostring(uic:Address()), "pastahhoverattitude2_"..tostring(uic:Address()) } -- helps make it unique
+   local factions = { faction, faction2 }
+   local Y = { 1, -1 }
+
+   for i,name in ipairs(names) do
+	  local comp = UIComponent( attitudeContainer:CreateComponent(name, "ui/templates/custom_image") )
+	  -- Apparently you need to set state and set visible with custom_image
+	  comp:SetState("custom_state_1")
+	  comp:SetVisible(true)
+	  comp:Resize(20,20)
+	  --local icon = getAttitudeIcon(faction, faction2)
+	  local icon = getAttitudeIcon(factions[i%2+1], factions[(i+1)%2+1])
+	  comp:SetImagePath(icon)
+	  local yOffset = 2
+	  local xOffset = 2
+	  local x, y = uic:Position()
+	  comp:MoveTo(x + xOffset, y + Y[i]*10 + yOffset)
+	  self.others[name] = comp
+   end
+end
+
+
+function hoverAttitude:generateOthers(faction)
+   -- Left Panel root > diplomacy_dropdown > faction_left_status_panel > diplomatic_relations > list > icon_at_war > enemies > flag
+   -- Right Panel root > diplomacy_dropdown > faction_right_status_panel > diplomatic_relations > list > icon_at_war > enemies > flag
+   local leftPanel = find_uicomponent(root, "diplomacy_dropdown", "faction_left_status_panel")
+   local rightPanel = find_uicomponent(root, "diplomacy_dropdown", "faction_right_status_panel")
+
+   --mapUic(leftPanel)
+   --function()
+   --end
+
+   -- Left Banner root > diplomacy_dropdown > faction_left_status_panel > button_faction
+   -- Right Banner root > diplomacy_dropdown > faction_right_status_panel > button_faction
+end
+
+
+function hoverAttitude:cleanup()
+   local t = self.others
+   for k,v in pairs(t) do
+	  Util.delete(v)
+	  t[k] = nil
+   end
+end
+
+
+-- when cleanAll is false, things should still be able to operate without reloading a gamesave
+local function cleanup(cleanAll)
+   -- Cleanup listeners
+   for k,v in pairs(listeners) do
+	  if cleanAll or (not cleanAll and not dontClean[ k ]) then
+		 core:remove_listener(k)
+		 listeners[k] = nil
+	  end
+   end
+   -- cleanup components
+   hoverAttitude:cleanup()
+   for k,v in pairs(comps) do
+	  Util.delete(v)
+	  comps[k] = nil
+   end
+   -- Manual checkers & handles reset
+   diplo = nil
+   faction_panel = nil
+   minDiplo = nil
+   smallBar = nil
+end
+
+
+-- For reloading the Mod for streamlined testing & development
+local function restart()
+   Log("Restarting "..ModName)
+   cleanup(true)
+   package.loaded.factionsTableDB = nil
+   package.loaded.inspect = nil
+   --package.loaded.pastahbetterui = nil
+   --require "pastahbetterui"
+
+   local f, err = loadfile("data/script/campaign/mod/pastahbetterui.lua")
+
+   if f then
+	  setfenv(f, core:get_env());
+	  local success, ret = pcall(f)
+
+	  if success then
+		 Util.delete(restartButton.uic)
+		 restartButton = nil
+		 pastahbetterui()
+	  else
+		 out("LOADFILE: " .. ret)
+	  end
+   else
+	  if err then
+		 out("LOADFILE: " .. err)
+	  end
+
+	  if subdir_err then
+		 out("LOADFILE: " .. subdir_err)
+	  end
+   end
 end
 
 
@@ -474,7 +476,7 @@ function pastahbetterui()
    restartButton:RegisterForClick(
 	  mypcall(function(context)
 			restart()
-	  end))
+	  end), "PastahRestartButtonListener")
 
 
    ------------
@@ -489,13 +491,14 @@ function pastahbetterui()
 	  end,
 	  mypcall(function(context)
 			diplo = find_uicomponent(root, "diplomacy_dropdown")
-			attitudeContainer = createComp(root, "PastahAttitudeIcons", "UI/campaign ui/script_dummy");
+			faction_panel = find_uicomponent(diplo, "faction_panel")
+			attitudeContainer = createComp(diplo, "PastahAttitudeIcons", "UI/campaign ui/script_dummy")
 
 			if not is_nil(minDiplo) and is_nil(root) then return end
 
 			if is_nil(smallBar) then
-			   local test = find_uicomponent(diplo, "faction_panel", "small_bar")
-			   smallBar = copyComp(test, "diploSmallBar")
+			   local small_bar = find_uicomponent(faction_panel, "small_bar")
+			   smallBar = copyComp(small_bar, "diploSmallBar")
 			   root:Adopt(smallBar:Address())
 			   local x, y = smallBar:Position()
 
@@ -504,7 +507,7 @@ function pastahbetterui()
 			end
 
 			addListener(
-			   "MinDiploMouseOn",
+			   "PastahBetterUiFlagMouseOn",
 			   "ComponentMouseOn",
 			   true,
 			   mypcall(function(context)
@@ -512,7 +515,7 @@ function pastahbetterui()
 					 if context.string ~= "flag" then return end
 					 if not is_nil(context.component) then
 					 	local uic = UIComponent(context.component)
-						local faction = getFactionFromFlag(uic)
+						local faction = getFactionFromImage(uic)
 					 	if faction then
 					 	   hoverAttitude:generateMain(uic, faction)
 					 	end
@@ -544,26 +547,57 @@ function pastahbetterui()
 			   end),
 			   true)
 
-			minDiplo = newButton("MinimizeDiplomacyButton", root, "SQUARE", "ui/skins/default/parchment_header_max.png")
+			--minDiplo = createComp("MinimizeDiplomacyButton", faction_panel, "SQUARE", "ui/skins/default/parchment_header_max.png")
+			minDiplo = createComp(faction_panel, "MinimizeDiplomacyButton", "ui/templates/square_medium_button")
+			minDiplo:SetImagePath("ui/skins/default/parchment_header_max.png")
+			minDiplo:RegisterTopMost()
 
-			cm:callback(
+			--local function minDiploSetup1()
+			minDiplo:Resize(50, 50)
+			minDiplo:SetDockOffset(0,0)
+			minDiplo:SetDockingPoint(0)
+			local factionOffX, factionOffY = faction_panel:Position()
+			minDiplo:MoveTo( factionOffX,  factionOffY + faction_panel:Height() - minDiplo:Height() )
+			--end
+
+			-- After initial setup of minDiplo, use this to reposition it during runtime
+			local minDiploReset
+			cm:callback(mypcall(
+						   function()
+							  local pos_x, pos_y = minDiplo:Position()
+							  local function foo()
+								 Log(tostring(pos_x)..", "..tostring(pos_y))
+								 minDiplo:SetDockOffset(0,0)
+								 minDiplo:SetDockingPoint(0)
+								 minDiplo:MoveTo( pos_x, pos_y )
+							  end
+							  minDiploReset = foo
+						   end
+							   ), .5) -- lel broken diplomacy UI crap, have to do this
+
+			addListener(
+			   "MinimizeDiplomacyClickListener",
+			   "ComponentLClickUp",
+			   function(context)
+				  return context.component == minDiplo:Address()
+			   end,
 			   mypcall(function(context)
-					 minDiplo:Resize(50, 50)
-					 minDiplo:PositionRelativeTo( diplo, diplo:Width()/3 - minDiplo:Width()*1, root:Height() - minDiplo:Height() )
-					 minDiplo.uic:RegisterTopMost()
-			   end), 0, "setupMinDiplo"
-			)
-			minDiplo:RegisterForClick(
-			   mypcall(function(context)
+					 if not minDiploReset then return end -- Wow, have to use a timed callback to wait for UI to stop being dumb
+					 LogUic(minDiplo)
 					 minDiploToggle = not minDiploToggle
+					 Log("hi")
 
 					 if minDiploToggle then
 						-- HIDE
-						minDiplo:SetImage("ui/skins/default/parchment_header_min.png")
+						root:Adopt(minDiplo:Address())
+						minDiplo:SetImagePath("ui/skins/default/parchment_header_min.png")
+						minDiploReset()
 						cm:get_campaign_ui_manager():lock_ui()
 					 else
 						-- SHOW
-						minDiplo:SetImage("ui/skins/default/parchment_header_max.png")
+						faction_panel:Adopt(minDiplo:Address())
+						minDiplo:SetImagePath("ui/skins/default/parchment_header_max.png")
+						minDiploReset()
 						cm:get_campaign_ui_manager():unlock_ui()
 					 end
 
@@ -573,14 +607,17 @@ function pastahbetterui()
 
 					 -- Disable buttons that break things or look janky
 					 for k, v in pairs(minDiploJankyButtons) do
-						Components.disableComponent(v, minDiploToggle)
+					 	Components.disableComponent(v, minDiploToggle)
 					 end
 					 mapUic(unitsList,
-							function(var)
-							   Components.disableComponent(var, minDiploToggle)
-							end, "skill_button")
-			   end)
-			)
+					 		function(var)
+					 		   Components.disableComponent(var, minDiploToggle)
+					 		end, "skill_button")
+
+					 LogUic(minDiplo)
+					 Log("------------------------------------------------------------------------------------")
+			   end), true)
+
 	  end), true)
 
    addListener(
