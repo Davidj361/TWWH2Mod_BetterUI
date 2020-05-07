@@ -16,13 +16,13 @@
 
 --[[
 TODO LIST
-* Contract all groups in faction list
-* Able to automatically skip dialogues during end turn diplomacy
 * Minimize intervention diplomacy
 * Add load game button in battles
 * Able to move camera during end turn
 * WASD in diplomacy
 * Make overlay colours better in campaign
+* Shortcut keys for browsing notifications
+* Fix skip dialogues where audio actually plays with skip
 
 
 * Attitude Stuff:
@@ -48,7 +48,7 @@ Suggestions
 
 local ModName = "Pastah's BetterUI"
 local Prefix = "PastahBetterUi"
-local logFile = "pastah.txt" -- Used for Log and LogUic
+local LogFile = "pastah.log" -- Used for Log and LogUic
 local FirstWrite = true
 -- UIC handles
 local root
@@ -86,12 +86,7 @@ local selectedFactionEvent = "ScriptEvent_"..Prefix.."_SelectedFaction"
 local listeners = {} -- Event listeners
 local comps = {} -- A collection of UIC/components
 -- Listeners to not cleanup if not cleanAll
-local dontClean = {
-   -- lol jank
-   MinDiploDiplomacyOpenedListener = true,
-   MinDiploDiplomacyClosedListener = true,
-   PastahRestartButtonListener = true,
-}
+local dontClean = {}
 -- Attitude hover data for diplomacy screen
 local hoverAttitude = {
    faction = nil,
@@ -124,14 +119,14 @@ end
 local function Log(text)
    -- Clear log file
    if FirstWrite then
-	  local file = io.open(logFile, "w")
+	  local file = io.open(LogFile, "w")
 	  file:write()
 	  file:close()
 	  FirstWrite = false
    end
 
    if type(text) == "string" then
-	  local file = io.open(logFile, "a")
+	  local file = io.open(LogFile, "a")
 	  file:write(text.."\n")
 	  file:close()
    end
@@ -252,7 +247,13 @@ end
 
 
 -- Hook functions so we can create a list of listeners and components for cleanup later
+-- First argument indicates whether to clean event listener if diplomacy panel is closed
 local function addListener(...)
+   local firstArg = arg[1]
+   if is_boolean(firstArg) and firstArg then
+	  dontClean[ arg[2] ] = true
+	  table.remove(arg,1)
+   end
    listeners[ arg[1] ] = true
    return core:add_listener(unpack(arg))
 end
@@ -501,24 +502,24 @@ local function restart()
    local f, err = loadfile("data/script/campaign/mod/pastahbetterui.lua")
 
    if f then
-	  setfenv(f, core:get_env());
-	  local success, ret = pcall(f)
+   	  setfenv(f, core:get_env());
+   	  local success, ret = pcall(f)
 
-	  if success then
-		 Util.delete(restartButton.uic)
-		 restartButton = nil
-		 pastahbetterui()
-	  else
-		 out("LOADFILE: " .. ret)
-	  end
+   	  if success then
+   		 Util.delete(restartButton.uic)
+   		 restartButton = nil
+   		 pastahbetterui()
+   	  else
+   		 out("LOADFILE: " .. ret)
+   	  end
    else
-	  if err then
-		 out("LOADFILE: " .. err)
-	  end
+   	  if err then
+   		 out("LOADFILE: " .. err)
+   	  end
 
-	  if subdir_err then
-		 out("LOADFILE: " .. subdir_err)
-	  end
+   	  if subdir_err then
+   		 out("LOADFILE: " .. subdir_err)
+   	  end
    end
 end
 
@@ -549,23 +550,52 @@ function pastahbetterui()
 
    -- Restart button for debugging
    restartButton = Button.new("PastahRestartButton", root, "SQUARE", "ui/skins/default/parchment_header_max.png")
-   restartButton:RegisterForClick(
+   addListener(
+	  true,
+	  Prefix.."RestartButton",
+	  "ComponentLClickUp",
+	  function(context) 
+		 return context.string == restartButton.name
+	  end,
 	  mypcall(function(context)
 			restart()
-	  end), "PastahRestartButtonListener")
+	  end), true
+   )
 
 
    ------------
    -- Listeners
    ------------
 
+   -- For testing
    addListener(
-	  "MinDiploDiplomacyOpenedListener",
+	  true,
+	  "pastahtestlistener",
+	  --"RegionSelected",
+	  --"SettlementSelected",
+	  --"CharacterSelected",
+	  "ComponentLClickUp",
+	  function(context)
+		 return true
+	  end,
+	  function(context)
+		 if not is_nil(context.component) then
+			local uic = UIComponent(context.component)
+			local uic = UIComponent( context.component )
+			LogUic(uic)
+		 end
+	  end, true)
+
+
+   addListener(
+	  true,
+	  Prefix.."DiplomacyOpened",
 	  "PanelOpenedCampaign",
 	  function(context)
 		 return context.string == "diplomacy_dropdown"
 	  end,
 	  mypcall(function(context)
+			Log("Diplomacy panel opened")
 			diplo = find_uicomponent(root, "diplomacy_dropdown")
 			faction_panel = find_uicomponent(diplo, "faction_panel")
 			attitudeContainer = createComp(diplo, "PastahAttitudeIcons", "UI/campaign ui/script_dummy")
@@ -590,23 +620,52 @@ function pastahbetterui()
 			   smallBar:SetVisible(false)
 			end
 
-			-- For testing
+			-- Check if it's a skip audio dialogue
+			-- Call back needed because dumb trade UI animations
+			cm:callback(
+			   mypcall(function()
+					 --root > diplomacy_dropdown > message_skip_dialogue
+					 --root > diplomacy_dropdown > message_skip_dialogue > button_skip
+					 --root > diplomacy_dropdown > offers_panel > offers_list_panel > button_set1 > button_cancel
+					 local skip = find_uicomponent(diplo, "message_skip_dialogue", "button_skip")
+					 --local skip = find_uicomponent(diplo, "message_skip_dialogue")
+					 if skip and skip:Visible() then
+						local offers = find_uicomponent(diplo, "offers_panel")
+						skip:SimulateLClick() -- Disables audio unfortunately
+
+						----offers:SetMoveable(false) -- Doesn't work
+						--uim:lock_diplomacy_audio()
+
+
+						--skip:SetVisible(false)
+						--offers:SetVisible(true)
+						--play_component_animation("show", "offers_panel");
+
+						
+						--for k,v in pairs(core.event_listeners) do
+						--for k,v in pairs(cm.script_timers) do
+						--   Log( "k:\n"..tostring(k) )
+						--   --Log( "v:\n"..tostring(inspect(v)) )
+						--   Log(v.callstack)
+						--   Log("---")
+						--end
+						
+						--cm:callback(
+						--   mypcall(function()
+						--   end), 10)
+					 end
+			   end), 0)
+
+
 			addListener(
-			   "pastahtestlistener",
-			   --"RegionSelected",
-			   --"SettlementSelected",
-			   --"CharacterSelected",
-			   "ComponentLClickUp",
-			   function(context)
-				  return true
-			   end,
-			   function(context)
-				  if not is_nil(context.component) then
-					 local uic = UIComponent(context.component)
-					 local uic = UIComponent( context.component )
-					 LogUic(uic)
-				  end
-			   end, true)
+			   Prefix.."SelectedFaction",
+			   selectedFactionEvent,
+			   true,
+			   mypcall(function(context)
+					 hoverAttitude:generateRows()
+			   end),
+			   true)
+
 
 			addListener(
 			   Prefix.."SelectedFaction",
@@ -672,7 +731,7 @@ function pastahbetterui()
 
 			-- Listener for checking double clicks on settlements
 			addListener(
-			   "MinDiploDoubleClickListener",
+			   Prefix.."DoubleClick",
 			   "ComponentLClickUp",
 			   true,
 			   mypcall(function(context)
@@ -742,7 +801,7 @@ function pastahbetterui()
 
 			-- Needs to be refreshed when user enters negotiation
 			addListener(
-			   Prefix.."NegotiateClose",
+			   Prefix.."NegotiateCloseClick",
 			   "ComponentLClickUp",
 			   function(context)
 				  --root > diplomacy_dropdown > offers_panel > offers_list_panel > button_set1 > button_cancel
@@ -760,7 +819,6 @@ function pastahbetterui()
 
 			--root > diplomacy_dropdown > faction_panel > button_enlarge_br
 			local test = find_uicomponent(faction_panel, "button_enlarge_br")
-			Log(tostring(test:IsMoveable()))
 
 			-- Create buttons & button logic
 			--local contractAll = UIComponent( faction_panel:CreateComponent(Prefix.."ContractAllButton", "ui/templates/square_medium_button") )
@@ -807,7 +865,7 @@ function pastahbetterui()
 					 expandAll:SetDockOffset(expandAll:Width()*3.5, 2*expandAll:Height()/3)
 					 expandAll:SetCanResizeHeight(false)
 					 expandAll:SetCanResizeWidth(false)
-			   end), 0)
+			   end), 0.1)
 			addListener(
 			   Prefix.."ExpandAllButtonClick",
 			   "ComponentLClickUp",
@@ -836,16 +894,13 @@ function pastahbetterui()
 					 minDiplo:MoveTo( diplo:Width()/3 - minDiplo:Width()*3.3, root:Height() - minDiplo:Height() )
 					 minDiplo:RegisterTopMost()
 			   end), 0)
-
-
 			addListener(
-			   Prefix.."MinimizeDiplomacyClickListener",
+			   Prefix.."MinimizeDiplomacyClick",
 			   "ComponentLClickUp",
 			   function(context)
 				  return context.string == minDiplo:Id()
 			   end,
 			   mypcall(function(context)
-					 LogUic(minDiplo)
 					 minDiploToggle = not minDiploToggle
 
 					 if minDiploToggle then
@@ -858,6 +913,7 @@ function pastahbetterui()
 						cm:get_campaign_ui_manager():unlock_ui()
 					 end
 
+					 uim:override("diplomacy"):set_allowed(not minDiploToggle) -- disable diplomacy button in main view
 					 diplo:SetVisible(not minDiploToggle)
 					 smallBar:SetVisible(minDiploToggle)
 					 layout:SetVisible(minDiploToggle)
@@ -871,13 +927,13 @@ function pastahbetterui()
 					 		   Components.disableComponent(var, minDiploToggle)
 					 		end, "skill_button")
 
-					 LogUic(minDiplo)
-			   end), true)
+					 end), true)
 
 	  end), true)
 
    addListener(
-	  "MinDiploDiplomacyClosedListener",
+	  true,
+	  Prefix.."DiplomacyClosed",
 	  "PanelClosedCampaign",
 	  function(context) 
 		 return context.string == "diplomacy_dropdown"
