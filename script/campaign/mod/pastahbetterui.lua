@@ -16,23 +16,18 @@
 
 --[[
 TODO LIST
-* Add load game button in battles
-* Make player & same faction show as grey & neutral
+* Contract all groups in faction list
 * Able to automatically skip dialogues during end turn diplomacy
+* Minimize intervention diplomacy
+* Add load game button in battles
 * Able to move camera during end turn
 * WASD in diplomacy
 * Make overlay colours better in campaign
-* Arrow indicating towards and receiving
-* Contract all groups in faction list
 
 
 * Attitude Stuff:
    * Tooltips for minimize button and faction attitude overlay
    * Button for toggling all attitudes in your faction panel
-   * Hovering over a flag will show attitudes in opposing panel (both sides / vice versa)
-   * Perhaps hover over banner flag or attitude of target?
-   * Add tooltip with actual relation #
-   * Make radio buttons for selecting main hover to be you or diplo target?
    
 Suggestions
 * Settlement list similar to diplomacy screen, making it easier to jump around
@@ -54,6 +49,7 @@ Suggestions
 local ModName = "Pastah's BetterUI"
 local Prefix = "PastahBetterUi"
 local logFile = "pastah.txt" -- Used for Log and LogUic
+local FirstWrite = true
 -- UIC handles
 local root
 local layout
@@ -126,6 +122,14 @@ end
 
 
 local function Log(text)
+   -- Clear log file
+   if FirstWrite then
+	  local file = io.open(logFile, "w")
+	  file:write()
+	  file:close()
+	  FirstWrite = false
+   end
+
    if type(text) == "string" then
 	  local file = io.open(logFile, "a")
 	  file:write(text.."\n")
@@ -338,7 +342,6 @@ end
 
 
 function hoverAttitude:generateMain(uic, faction)
-   --local faction2 = find_uicomponent(diplo, "faction_right_status_panel", "button_faction")
    -- faction2 = getFactionFromImage(faction2)
    local faction2 = selectedFaction
    if not faction or not faction2 then return end -- If either faction is invalid
@@ -350,7 +353,7 @@ end
 -- Top is how faction feels towards faction2
 -- Bottom is how faction2 feels towards faction
 function hoverAttitude:generateComps(uic, faction, faction2)
-   local names = { "pastahhoverattitude_"..tostring(uic:Address()), "pastahhoverattitude2_"..tostring(uic:Address()) } -- helps make it unique
+   local names = { "pastahhoverattitude", "pastahhoverattitude2" } -- helps make it unique
    local factions = { faction, faction2 }
    local Y = { -1, 1 }
 
@@ -400,7 +403,8 @@ function hoverAttitude:generateComps(uic, faction, faction2)
 	  x, y = comp:Position()
 	  arrow:MoveTo(x + 14, y + 5)
 	  if uic:Id() ~= "attitude" then
-		 self.others[name] = comp
+		 -- Needs unique names because of hash table others
+		 self.others[name.."_"..tostring(uic:Address())] = comp
 	  end
    end
 end
@@ -423,25 +427,31 @@ end
 function hoverAttitude:generateFactionButton(faction2)
    local uic = find_uicomponent(diplo, "faction_right_status_panel", "button_faction")
    local faction = getFactionFromImage(uic)
-   Log(faction:name()..", 2:"..faction2:name())
    if not faction or not faction2 then return end -- If either faction is invalid
    self:generateComps(uic, faction, faction2)
 end
 
 
---function hoverAttitude:generateOthers(faction)
---   -- Left Panel root > diplomacy_dropdown > faction_left_status_panel > diplomatic_relations > list > icon_at_war > enemies > flag
---   -- Right Panel root > diplomacy_dropdown > faction_right_status_panel > diplomatic_relations > list > icon_at_war > enemies > flag
---   local leftPanel = find_uicomponent(root, "diplomacy_dropdown", "faction_left_status_panel")
---   local rightPanel = find_uicomponent(root, "diplomacy_dropdown", "faction_right_status_panel")
---
---   --mapUic(leftPanel)
---   --function()
---   --end
---
---   -- Left Banner root > diplomacy_dropdown > faction_left_status_panel > button_faction
---   -- Right Banner root > diplomacy_dropdown > faction_right_status_panel > button_faction
---end
+function hoverAttitude:generateOthers(faction2)
+   -- Left Panel root > diplomacy_dropdown > faction_left_status_panel > diplomatic_relations > list > icon_at_war > enemies > flag
+   -- Right Panel root > diplomacy_dropdown > faction_right_status_panel > diplomatic_relations > list > icon_at_war > enemies > flag
+   local leftPanel = find_uicomponent(root, "diplomacy_dropdown", "faction_left_status_panel")
+   local rightPanel = find_uicomponent(root, "diplomacy_dropdown", "faction_right_status_panel")
+
+   mapUic(leftPanel, mypcall(
+			 function(var)
+				local faction = getFactionFromImage(var)
+				hoverAttitude:generateComps(var, faction, faction2)
+			 end), "flag")
+   mapUic(rightPanel, mypcall(
+			 function(var)
+				local faction = getFactionFromImage(var)
+				hoverAttitude:generateComps(var, faction, faction2)
+			 end), "flag")
+
+   -- Left Banner root > diplomacy_dropdown > faction_left_status_panel > button_faction
+   -- Right Banner root > diplomacy_dropdown > faction_right_status_panel > button_faction
+end
 
 
 -- cleanAll shouldn't refer to the restart button
@@ -519,12 +529,6 @@ end
 
 function pastahbetterui()
 
-   -- Clear log file
-   if true then
-	  local file = io.open(logFile, "w")
-	  file:write()
-	  file:close()
-   end
    Log("Initializing " .. ModName)
 
    -- UIC handles
@@ -599,8 +603,6 @@ function pastahbetterui()
 			   function(context)
 				  if not is_nil(context.component) then
 					 local uic = UIComponent(context.component)
-					 --Log( context.string )
-					 --Log( tostring( uic:GetImagePath() ) )
 					 local uic = UIComponent( context.component )
 					 LogUic(uic)
 				  end
@@ -634,21 +636,24 @@ function pastahbetterui()
 					 end
 			   end),
 			   true)
-			--addListener(
-			--   Prefix.."FactionButtonMouseOn",
-			--   "ComponentMouseOn",
-			--   function(context)
-			--	  return context.string == "button_faction"
-			--   end,
-			--   mypcall(function(context)
-			--		 --local uic = UIComponent(context.component)
-			--		 --local faction = getFactionFromImage(uic)
-			--		 --if faction then
-			--		 --	selectedFaction = faction
-			--		 --	core:trigger_event(selectedFactionEvent)
-			--		 --end
-			--   end),
-			--   true)
+			addListener(
+			   Prefix.."FactionButtonMouseOn",
+			   "ComponentMouseOn",
+			   function(context)
+				  local uic = UIComponent(context.component)
+				  --find_uicomponent(diplo, "faction_right_status_panel", "button_faction")
+				  local str = uicomponent_to_str(uic):match("faction_right_status_panel")
+				  local str2 = uicomponent_to_str(uic):match("faction_left_status_panel")
+				  return context.string == "button_faction" and (str or str2)
+			   end,
+			   mypcall(function(context)
+					 local uic = UIComponent(context.component)
+					 local faction = getFactionFromImage(uic)
+					 if faction then
+						hoverAttitude:generateOthers(faction)
+					 end
+			   end),
+			   true)
 			--addListener(
 			--   "PastahBetterUiRowMouseOn",
 			--   "ComponentMouseOn",
@@ -663,6 +668,7 @@ function pastahbetterui()
 			--		 hoverAttitude:generateMain(attitudeIcon, faction)
 			--   end),
 			--   true)
+
 
 			-- Listener for checking double clicks on settlements
 			addListener(
@@ -733,6 +739,7 @@ function pastahbetterui()
 			   end),
 			   true)
 
+
 			-- Needs to be refreshed when user enters negotiation
 			addListener(
 			   Prefix.."NegotiateClose",
@@ -744,7 +751,6 @@ function pastahbetterui()
 				  return context.string == "button_cancel" and str
 			   end,
 			   mypcall(function(context)
-					 Log("Works!")
 					 cm:callback(
 						mypcall(function(context)
 							  hoverAttitude:generateRows()
@@ -752,10 +758,78 @@ function pastahbetterui()
 			   end),
 			   true)
 
+			--root > diplomacy_dropdown > faction_panel > button_enlarge_br
+			local test = find_uicomponent(faction_panel, "button_enlarge_br")
+			Log(tostring(test:IsMoveable()))
+
+			-- Create buttons & button logic
+			--local contractAll = UIComponent( faction_panel:CreateComponent(Prefix.."ContractAllButton", "ui/templates/square_medium_button") )
+			local contractAll = createComp(faction_panel, Prefix.."ContractAllButton", "ui/templates/square_medium_button")
+			contractAll:SetImagePath("ui/skins/default/parchment_header_max.png")
+			cm:callback(
+			   mypcall(function(context)
+					 contractAll:Resize(25, 25)
+					 contractAll:SetMoveable(true)
+					 contractAll:SetDockingPoint(1)
+					 contractAll:SetDockOffset(contractAll:Width()*2.5, 2*contractAll:Height()/3)
+					 contractAll:SetCanResizeHeight(false)
+					 contractAll:SetCanResizeWidth(false)
+			   end), 0.1)
+			addListener(
+			   Prefix.."ContractAllButtonClick",
+			   "ComponentLClickUp",
+			   function(context)
+				  return context.string == contractAll:Id()
+			   end,
+			   mypcall(function(context)
+					 local uic = find_uicomponent(faction_panel, "sortable_list_factions", "list_clip", "list_box")
+					 --faction_row_entry_
+					 for i = 0, uic:ChildCount() - 1 do
+						local iter = UIComponent( uic:Find(i) )
+						if not iter:Id():match("^(faction_row_entry_).*") then
+						   iter:SetState("down")
+						   --iter:SimulateLClick()
+						   --iter:SetState("selected_down")
+						else
+						   iter:SetVisible(false)
+						end
+					 end
+			   end), true)
+
+			--local expandAll = UIComponent( faction_panel:CreateComponent(Prefix.."ExpandAllButton", "ui/templates/square_medium_button") )
+			local expandAll = createComp(faction_panel, Prefix.."ExpandAllButton", "ui/templates/square_medium_button")
+			expandAll:SetImagePath("ui/skins/default/parchment_header_min.png")
+			cm:callback(
+			   mypcall(function(context)
+					 expandAll:Resize(25, 25)
+					 expandAll:SetMoveable(true)
+					 expandAll:SetDockingPoint(1)
+					 expandAll:SetDockOffset(expandAll:Width()*3.5, 2*expandAll:Height()/3)
+					 expandAll:SetCanResizeHeight(false)
+					 expandAll:SetCanResizeWidth(false)
+			   end), 0)
+			addListener(
+			   Prefix.."ExpandAllButtonClick",
+			   "ComponentLClickUp",
+			   function(context)
+				  return context.string == expandAll:Id()
+			   end,
+			   mypcall(function(context)
+					 local uic = find_uicomponent(faction_panel, "sortable_list_factions", "list_clip", "list_box")
+					 --faction_row_entry_
+					 for i = 0, uic:ChildCount() - 1 do
+						local iter = UIComponent( uic:Find(i) )
+						if not iter:Id():match("^(faction_row_entry_).*") then
+						   iter:SetState("selected_down")
+						else
+						   iter:SetVisible(true)
+						end
+					 end
+			   end), true)
+
 
 			minDiplo = createComp(root, "MinimizeDiplomacyButton", "ui/templates/square_medium_button")
 			minDiplo:SetImagePath("ui/skins/default/parchment_header_max.png")
-
 			cm:callback(
 			   mypcall(function(context)
 					 minDiplo:Resize(50, 50)
@@ -768,12 +842,11 @@ function pastahbetterui()
 			   Prefix.."MinimizeDiplomacyClickListener",
 			   "ComponentLClickUp",
 			   function(context)
-				  return context.component == minDiplo:Address()
+				  return context.string == minDiplo:Id()
 			   end,
 			   mypcall(function(context)
 					 LogUic(minDiplo)
 					 minDiploToggle = not minDiploToggle
-					 Log("hi")
 
 					 if minDiploToggle then
 						-- HIDE
@@ -799,7 +872,6 @@ function pastahbetterui()
 					 		end, "skill_button")
 
 					 LogUic(minDiplo)
-					 Log("------------------------------------------------------------------------------------")
 			   end), true)
 
 	  end), true)
