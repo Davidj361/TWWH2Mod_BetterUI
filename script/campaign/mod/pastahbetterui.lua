@@ -51,6 +51,7 @@ local FirstWrite = true
 local root
 local layout
 local faction_panel
+local events
 -- Things to disable when toggling diplomacy panel \/
 local minDiploJankyButtons = {
    missionsButton,
@@ -484,6 +485,7 @@ local function cleanup(cleanAll)
    faction_panel = nil
    minDiplo = nil
    smallBar = nil
+   events = nil
 end
 
 
@@ -558,6 +560,10 @@ function pastahbetterui()
 			restart()
 	  end), true
    )
+   restartButton:MoveTo(0, 250)
+
+   root:StealInputFocus(true)
+   root:StealInputFocus(false)
 
 
    ------------
@@ -668,61 +674,23 @@ function pastahbetterui()
 		 -- Needs a callback because UI is slow & sluggish
 		 cm:callback(
 			mypcall(function(context)
-				  local events = find_uicomponent(root, "panel_manager", "events")
+				  events = find_uicomponent(root, "panel_manager", "events")
 				  if not events then return end
-				  --Log("events")
-				  --LogUic(events)
 
-				  --events:SetVisible(false)
-				  --context:dilemma():complete()
-				  local panel_manager = find_uicomponent(root, "panel_manager")
-				  panel_manager:SetVisible(false)
-				  CampaignUI.ToggleScreenCover(false)
-				  cm.cinematic:stop_cindy_playback(true)
-				  cm.cinematic:stop_cindy_playback_no_camera(true)
-				  cm:stop_user_input(false)
-				  uim:unlock_ui() -- Lock level is already 0, doesn't do anything
-				  uim:unlock_ui() -- Lock level is already 0, doesn't do anything
-				  uim:unlock_ui() -- Lock level is already 0, doesn't do anything
-				  uim:unlock_ui() -- Lock level is already 0, doesn't do anything
-				  uim:unlock_ui() -- Lock level is already 0, doesn't do anything
-				  uim:unlock_ui() -- Lock level is already 0, doesn't do anything
-				  uim:unlock_ui() -- Lock level is already 0, doesn't do anything
-				  uim:unlock_ui() -- Lock level is already 0, doesn't do anything
-				  uim:unlock_ui() -- Lock level is already 0, doesn't do anything
-				  uim:unlock_ui() -- Lock level is already 0, doesn't do anything
-				  cm:enable_ui(true)
+				  cm:print_key_steal_entries()
+				  events:SetVisible(false)
+				  --context:dilemma():complete() -- Maybe?
 
-				  --cm:get_campaign_ui_manager():unlock_ui()
-				  Log("Is root interactive? "..tostring(root:IsInteractive()))
-				  layout:SetInteractive(true)
-				  layout:SetDisabled(false)
-				  Log("Is layout interactive? "..tostring(layout:IsInteractive()))
-				  uim:override("diplomacy"):set_allowed(true)
-				  Log("uim locked? "..tostring(uim.ui_locked))
-				  local blackFade = find_uicomponent(root, "black_fade")
-				  blackFade:SetVisible(false)
-				  play_component_animation("show", "faction_buttons_docker");
-				  cm:disable_end_turn(false)
 				  uim:reset_all_overrides();
-				  --cm:disable_movement_for_faction(secessionists_faction_str);
-				  mapUic(root,
-				  		 function(var)
-				  			--var:SetDisabled(false)
-				  			var:SetInteractive(true)
-				  		 end)
-				  root:Layout()
-				  layout:Layout()
-				  --mapUic(root,
-				  --		 function(var)
-				  --			Log(uicomponent_to_str(var))
-				  --			Log("\t\t Interactive: "..tostring(var:IsInteractive()).." | State: "..var:CurrentState())
-				  --		 end)
-				  --Log("---------------------------------------------")
-				  --uim:override("end_turn"):unlock(false, true);
-				  --uim:override("giving_orders"):unlock(false, true);
-				  --uim:override("events_rollout"):unlock(false, true);
-			end), 10)
+				  uim.panels_open = {}
+				  --uim:load_ui_overrides()
+				  --uim:override("events_rollout"):set_allowed(false)
+				  --uim:override("events_panel"):set_allowed(false)
+
+				  cm:enable_ui(true)
+				  cm.intervention_manager:lock_ui(false)
+
+			end), 5)
 	  end, true)
 
    addListener(
@@ -733,10 +701,27 @@ function pastahbetterui()
 		 return context.string == "script_F2"
 	  end,
 	  mypcall(function(context)
-		 Log("Shortcut Pressed")
 		 local playerFaction = cm:get_faction(cm:get_local_faction(true))
 		 cm:trigger_dilemma(playerFaction:name(), "wh2_dlc13_emp_elector_politics_2")
 	  end), true)
+   addListener(
+	  true,
+	  "testshortcutkeydilemma",
+	  "ShortcutPressed",
+	  function(context)
+		 return context.string == "script_F3"
+	  end,
+	  mypcall(function(context)
+			Log("Shortcut Pressed")
+			events = find_uicomponent(root, "panel_manager", "events")
+			if events then
+			   events:SetVisible(true)
+			   LogUic(events)
+			else
+			   Log("no events")
+			end
+	  end), true)
+
    
 
 
