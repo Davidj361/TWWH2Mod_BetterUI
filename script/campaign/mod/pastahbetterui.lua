@@ -18,16 +18,13 @@
 TODO LIST
 * Minimize intervention diplomacy
 * Add load game button in battles
-* Able to move camera during end turn
 * WASD in diplomacy
-* Make overlay colours better in campaign
 * Shortcut keys for browsing notifications
+* Tooltips for my buttons
+* Able to move camera during end turn
+* Make overlay colours better in campaign
 * Fix skip dialogues where audio actually plays with skip
 
-
-* Attitude Stuff:
-   * Tooltips for minimize button and faction attitude overlay
-   * Button for toggling all attitudes in your faction panel
    
 Suggestions
 * Settlement list similar to diplomacy screen, making it easier to jump around
@@ -581,9 +578,72 @@ function pastahbetterui()
 	  function(context)
 		 if not is_nil(context.component) then
 			local uic = UIComponent(context.component)
-			local uic = UIComponent( context.component )
-			LogUic(uic)
+			--local uic = find_uicomponent(root, "panel_manager", "events")
+			if uic then
+				LogUic(uic)
+			end
 		 end
+	  end, true)
+
+
+   -- Be able to minimize dilemma
+   --root > panel_manager > events > event_dilemma_imperial_authority > dilemma_imperial_authority > main_holder > title_holder
+   addListener(
+	  true,
+	  Prefix.."Dilemma",
+	  "DilemmaIssuedEvent",
+	  function(context)
+		 return true
+	  end,
+	  function(context)
+		 Log("Dilemma started: "..context:dilemma())
+		 -- Have to manually find the dilemma component
+		 -- Needs a callback because UI is slow & sluggish
+		 cm:callback(
+			mypcall(function(context)
+				  local events = find_uicomponent(root, "panel_manager", "events")
+				  if not events then return end
+				  --Log("events")
+				  --LogUic(events)
+
+				  --events:SetVisible(false)
+				  --context:dilemma():complete()
+				  local panel_manager = find_uicomponent(root, "panel_manager")
+				  panel_manager:SetVisible(false)
+				  CampaignUI.ToggleScreenCover(false)
+				  cm.cinematic:stop_cindy_playback(true)
+				  cm.cinematic:stop_cindy_playback_no_camera(true)
+				  cm:stop_user_input(false)
+				  uim:unlock_ui() -- Lock level is already 0, doesn't do anything
+				  cm:enable_ui(true)
+
+				  --cm:get_campaign_ui_manager():unlock_ui()
+				  Log("Is root interactive? "..tostring(root:IsInteractive()))
+				  layout:SetInteractive(true)
+				  layout:SetDisabled(false)
+				  Log("Is layout interactive? "..tostring(layout:IsInteractive()))
+				  uim:override("diplomacy"):set_allowed(true)
+				  Log("uim locked? "..tostring(uim.ui_locked))
+				  local blackFade = find_uicomponent(root, "black_fade")
+				  blackFade:SetVisible(false)
+				  play_component_animation("show", "faction_buttons_docker");
+				  cm:disable_end_turn(false)
+				  --cm:disable_movement_for_faction(secessionists_faction_str);
+				  --mapUic(root,
+				  --		 function(var)
+				  --			var:SetInteractive(true)
+				  --			var:SetDisabled(false)
+				  --		 end)
+				  --mapUic(root,
+				  --		 function(var)
+				  --			Log(uicomponent_to_str(var))
+				  --			Log("\t\t Interactive: "..tostring(var:IsInteractive()).." | State: "..var:CurrentState())
+				  --		 end)
+				  --Log("---------------------------------------------")
+				  --uim:override("end_turn"):unlock(false, true);
+				  --uim:override("giving_orders"):unlock(false, true);
+				  --uim:override("events_rollout"):unlock(false, true);
+			end), 5)
 	  end, true)
 
 
@@ -595,7 +655,6 @@ function pastahbetterui()
 		 return context.string == "diplomacy_dropdown"
 	  end,
 	  mypcall(function(context)
-			Log("Diplomacy panel opened")
 			diplo = find_uicomponent(root, "diplomacy_dropdown")
 			faction_panel = find_uicomponent(diplo, "faction_panel")
 			attitudeContainer = createComp(diplo, "PastahAttitudeIcons", "UI/campaign ui/script_dummy")
